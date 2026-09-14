@@ -114,7 +114,7 @@ docker build -t wizaipy .
 ```
 
 Notes on validation config:
-- `pytest.ini` applies `-v --tb=short --strict-markers`, coverage over `api`/`core`/`integrations` (reported, not enforced), and `asyncio_mode = auto`. A full run takes ~70s because the CoinGecko rate-limit test sleeps through its bounded retries.
+- `pytest.ini` applies `-v --tb=short --strict-markers`, coverage over `api`/`core`/`integrations` (reported, not enforced), and `asyncio_mode = auto`. A full run takes ~8s with no live services.
 - No flake8/black/mypy config files exist; the commands above use sensible defaults. See `.agent/baseline.md` for current counts.
 
 ### Run Locally
@@ -154,7 +154,7 @@ Swagger UI is only mounted when `DEBUG=true` (`/docs`, `/redoc`).
 - **Config**: never read `os.environ` directly — add a field to `config.Settings` and call `get_settings()`.
 - **Async**: routers and integration clients are `async`; use `httpx`/`aiohttp`; tests use `pytest-asyncio`.
 - **Strategies**: subclass `core.strategies.base.BaseStrategy`, return `TradingSignal`s, register in the strategy registry.
-- **Testing**: arrange-act-assert with `unittest.mock`; fixtures in `tests/conftest.py`. Patch names **where they are used** (e.g. `api.routers.auth.get_current_user`), not where defined — the current suite patches `api.deps.*` which routers import by name, so those patches are ineffective.
+- **Testing**: arrange-act-assert with `unittest.mock`; fixtures in `tests/conftest.py`. Patch names **where they are used** (e.g. `api.routers.auth.verify_nft_ownership`), not where defined. Anything consumed via `Depends(...)` (`get_current_user`, `trade_rate_limiter`, `get_redis_client`) cannot be patched at all — override it with `app.dependency_overrides`; see the `authenticated_user` / `trade_deps` fixtures in `tests/unit/test_api.py`.
 - **Naming**: `snake_case` functions/modules, `PascalCase` classes, `UPPER_CASE` module constants.
 
 ### Do NOT
@@ -192,7 +192,7 @@ Swagger UI is only mounted when `DEBUG=true` (`/docs`, `/redoc`).
 
 ### All Changes
 
-- [ ] `pytest` passes for tests that were green in `.agent/baseline.md` (42 pass); no new failures
+- [ ] `pytest` passes for tests that were green in `.agent/baseline.md` (56 pass); no new failures
 - [ ] `flake8` introduces no new warnings; `black --check` clean on touched files
 - [ ] No unrelated changes included; no `.backup` files added
 - [ ] Commit messages follow conventional format: `type(scope): description`
@@ -268,7 +268,7 @@ Full template: `env.example`. Required (no default in `config.Settings`):
 
 ### Known Issues
 
-- **Red test baseline** (2026-09-14): 26 failed / 42 passed / 3 skipped, coverage 41%. Root causes: (a) `tests/unit/test_api.py` patches `api.deps.*` but routers bind those names at import, so the real NFT check runs and returns 400 (15 tests); (b) `tests/integration/test_integrations.py` Uniswap/Twitter/CoinGecko tests hit real clients or mock the wrong target (8 tests); (c) 3 momentum-strategy assertions fail on logic. Details in `.agent/baseline.md`.
+- **Red test baseline** (2026-09-14): 12 failed / 56 passed / 3 skipped, coverage 40%. `tests/unit/test_api.py` is green. Remaining: (a) `tests/integration/test_integrations.py` Uniswap/Twitter/CoinGecko tests hit real clients or mock the wrong target (9 tests); (b) 3 momentum-strategy assertions fail on logic. Details in `.agent/baseline.md`.
 - `web3==6.12.0` requires the `setuptools<81` / `eth-typing<5` pins in `requirements.txt`; upgrading web3 to 7.x would remove the need.
 - Lint/format/types are far from clean: flake8 756 findings, black would reformat 25/35 files, mypy 111 errors in 16 files.
 - Tracked artifacts that should not be: `*.backup*` files, `celerybeat-schedule`.
