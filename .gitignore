@@ -74,3 +74,7 @@ playwright-mcp-config.json
 .claude/CLAUDE.md
 AGENTS.md.backup-*
 manifest.yml.backup-*
+
+# Coverage data
+.coverage
+.coverage.*

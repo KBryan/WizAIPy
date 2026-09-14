@@ -74,9 +74,9 @@
 ### Setup
 
 ```bash
-# Python 3.12 venv (uv). The pins below are required for web3==6.12.0 on modern toolchains.
+# Python 3.12 venv (uv). requirements.txt pins setuptools<81 / eth-typing<5, required by web3==6.12.0.
 uv venv --python 3.12 .venv
-uv pip install --python .venv/bin/python -r requirements.txt "setuptools<81" "eth-typing<5" pytest-cov
+uv pip install --python .venv/bin/python -r requirements.txt
 
 # Environment — env.example is the app template (the repo's .env is agent-framework config)
 cp env.example .env   # then fill SECRET_KEY, DATABASE_URL, REDIS_URL, ETHEREUM_RPC_URL, PRIVATE_KEY, CELERY_*
@@ -114,7 +114,7 @@ docker build -t wizaipy .
 ```
 
 Notes on validation config:
-- `pytest.ini` uses a `[tool:pytest]` header, which pytest **ignores** in `pytest.ini` (that header is for `setup.cfg`). The `addopts`, markers, and `asyncio_mode = auto` there are therefore not applied. Rename to `[pytest]` to activate — but then `--cov-fail-under=80` will fail the suite and `pytest-cov` must be in `requirements.txt`.
+- `pytest.ini` applies `-v --tb=short --strict-markers`, coverage over `api`/`core`/`integrations` (reported, not enforced), and `asyncio_mode = auto`. A full run takes ~70s because the CoinGecko rate-limit test sleeps through its bounded retries.
 - No flake8/black/mypy config files exist; the commands above use sensible defaults. See `.agent/baseline.md` for current counts.
 
 ### Run Locally
@@ -192,7 +192,7 @@ Swagger UI is only mounted when `DEBUG=true` (`/docs`, `/redoc`).
 
 ### All Changes
 
-- [ ] `pytest` passes for tests that were green in `.agent/baseline.md` (33 pass); no new failures
+- [ ] `pytest` passes for tests that were green in `.agent/baseline.md` (42 pass); no new failures
 - [ ] `flake8` introduces no new warnings; `black --check` clean on touched files
 - [ ] No unrelated changes included; no `.backup` files added
 - [ ] Commit messages follow conventional format: `type(scope): description`
@@ -268,10 +268,8 @@ Full template: `env.example`. Required (no default in `config.Settings`):
 
 ### Known Issues
 
-- **Red test baseline** (2026-09-14): 21 failed / 33 passed / 17 skipped. Root causes: (a) `tests/unit/test_api.py` patches `api.deps.*` but routers bind those names at import, so the real NFT check runs and returns 400 (15 tests); (b) `tests/integration/test_integrations.py` Uniswap tests hit a real `Web3` provider (4 tests); (c) 3 momentum-strategy assertions fail on logic. Details in `.agent/baseline.md`.
-- `pytest.ini` header is `[tool:pytest]` — pytest ignores it in `pytest.ini`; `asyncio_mode`, markers and coverage flags are inactive. `pytest-cov` is referenced but not in `requirements.txt`.
-- `web3==6.12.0` needs `setuptools<81` (for `pkg_resources`) and `eth-typing<5` (for `ContractName`) — neither is pinned in `requirements.txt`, so a fresh install on a modern toolchain breaks at import.
-- `requirements.txt` has duplicate/unpinned trailing entries (`pydantic-settings`, `PyJWT`, `flower`, `psutil`, `celery[redis]`).
+- **Red test baseline** (2026-09-14): 26 failed / 42 passed / 3 skipped, coverage 41%. Root causes: (a) `tests/unit/test_api.py` patches `api.deps.*` but routers bind those names at import, so the real NFT check runs and returns 400 (15 tests); (b) `tests/integration/test_integrations.py` Uniswap/Twitter/CoinGecko tests hit real clients or mock the wrong target (8 tests); (c) 3 momentum-strategy assertions fail on logic. Details in `.agent/baseline.md`.
+- `web3==6.12.0` requires the `setuptools<81` / `eth-typing<5` pins in `requirements.txt`; upgrading web3 to 7.x would remove the need.
 - Lint/format/types are far from clean: flake8 756 findings, black would reformat 25/35 files, mypy 111 errors in 16 files.
 - Tracked artifacts that should not be: `*.backup*` files, `celerybeat-schedule`.
 - `api/routers/twitter.py` exists but the router is commented out in `api/main.py`.
