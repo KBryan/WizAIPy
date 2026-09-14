@@ -49,7 +49,7 @@
 - **Database**: PostgreSQL 15 via SQLAlchemy 2.0 ORM; schema managed by Alembic (`alembic.ini`, `alembic/versions/`). Tests use SQLite.
 - **Cache / broker**: Redis 7 — Celery broker and result backend (`CELERY_BROKER_URL`, `CELERY_RESULT_BACKEND`), app caching (`REDIS_URL`).
 - **External integrations**: Uniswap V2/V3 via web3.py (Ethereum, SKALE Europa, Beam); CoinGecko market data; Twitter via tweepy (optional, `ENABLE_TWITTER`); LLM providers — Anthropic, OpenAI, Google Gemini, Venice AI (`config.LLM_PROVIDERS`).
-- **Authentication**: NFT-ownership verification (`api/deps.py:verify_nft_ownership`, contract at `NFT_CONTRACT_ADDRESS`) issuing JWTs (python-jose / PyJWT). `BYPASS_NFT_GATE=true` disables the gate for local dev.
+- **Authentication**: NFT-ownership verification (`api/deps.py:verify_nft_ownership`, contract at `NFT_CONTRACT_ADDRESS`) issuing JWTs (python-jose / PyJWT). `BYPASS_NFT_GATE=true` disables the gate for local dev. Rate limiting (`api/deps.py:RateLimiter`) is Redis-backed and keyed on the verified wallet address, falling back to client IP.
 - **Settings**: `config.Settings` (pydantic-settings) reads `.env`; 7 fields are **required** with no default: `SECRET_KEY`, `DATABASE_URL`, `REDIS_URL`, `ETHEREUM_RPC_URL`, `PRIVATE_KEY`, `CELERY_BROKER_URL`, `CELERY_RESULT_BACKEND`. `get_settings()` is called at **import time** in `core/execution/engine.py` and `api/main.py`, so nothing imports without these set.
 - **Observability**: `/health`, `/health/ping`, liveness/readiness endpoints; `X-Process-Time` header; request logging middleware; Prometheus + Grafana + Flower services in `docker-compose.yml`.
 - **Deployment target**: Docker Compose (api, worker, scheduler, postgres, redis, flower, nginx, prometheus, grafana), Kubernetes (`k8s/`), Heroku-style (`Procfile`, `runtime.txt`). `scripts/deploy.sh [environment]` wraps compose builds.
@@ -114,7 +114,7 @@ docker build -t wizaipy .
 ```
 
 Notes on validation config:
-- `pytest.ini` applies `-v --tb=short --strict-markers`, coverage over `api`/`core`/`integrations` (reported, not enforced), and `asyncio_mode = auto`. A full run takes ~8s with no live services.
+- `pytest.ini` applies `-v --tb=short --strict-markers`, coverage over `api`/`core`/`integrations` (reported, not enforced), and `asyncio_mode = auto`. A full run takes ~8s, but `TestCoinGeckoIntegration` hits the live CoinGecko API and adds ~60s whenever CoinGecko answers 429 (`Retry-After: 60`). Deselect with `-k 'not CoinGecko'` for a fast loop.
 - No flake8/black/mypy config files exist; the commands above use sensible defaults. See `.agent/baseline.md` for current counts.
 
 ### Run Locally
@@ -192,7 +192,7 @@ Swagger UI is only mounted when `DEBUG=true` (`/docs`, `/redoc`).
 
 ### All Changes
 
-- [ ] `pytest` passes for tests that were green in `.agent/baseline.md` (56 pass); no new failures
+- [ ] `pytest` passes for tests that were green in `.agent/baseline.md` (58 pass); no new failures
 - [ ] `flake8` introduces no new warnings; `black --check` clean on touched files
 - [ ] No unrelated changes included; no `.backup` files added
 - [ ] Commit messages follow conventional format: `type(scope): description`
@@ -268,7 +268,7 @@ Full template: `env.example`. Required (no default in `config.Settings`):
 
 ### Known Issues
 
-- **Red test baseline** (2026-09-14): 12 failed / 56 passed / 3 skipped, coverage 40%. `tests/unit/test_api.py` is green. Remaining: (a) `tests/integration/test_integrations.py` Uniswap/Twitter/CoinGecko tests hit real clients or mock the wrong target (9 tests); (b) 3 momentum-strategy assertions fail on logic. Details in `.agent/baseline.md`.
+- **Red test baseline** (2026-09-14): 12 failed / 56 passed / 3 skipped, coverage 40%. `tests/unit/test_api.py` is green. Remaining: (a) `tests/integration/test_integrations.py` Uniswap/Twitter/CoinGecko tests hit real clients or mock the wrong target (9 tests; the CoinGecko ones call the live API and can sleep 60s on a real 429); (b) 3 momentum-strategy assertions fail on logic. Details in `.agent/baseline.md`.
 - `web3==6.12.0` requires the `setuptools<81` / `eth-typing<5` pins in `requirements.txt`; upgrading web3 to 7.x would remove the need.
 - Lint/format/types are far from clean: flake8 756 findings, black would reformat 25/35 files, mypy 111 errors in 16 files.
 - Tracked artifacts that should not be: `*.backup*` files, `celerybeat-schedule`.

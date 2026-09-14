@@ -1,6 +1,6 @@
 # Validation Baseline
 
-**Date**: 2026-09-14 (updated after test_api.py patch-target fix)
+**Date**: 2026-09-14 (updated after RateLimiter request_id fix)
 **Maturity Level**: 2
 **Environment**: uv-managed venv, CPython 3.12.14, `requirements.txt` (now pins `setuptools<81`, `eth-typing<5`, `pytest-cov`)
 **Env vars for run**: `SECRET_KEY=test DATABASE_URL=sqlite:///./test.db REDIS_URL=redis://localhost:6379/0 ETHEREUM_RPC_URL=http://localhost:8545 PRIVATE_KEY=0x…01 CELERY_BROKER_URL=redis://localhost:6379/1 CELERY_RESULT_BACKEND=redis://localhost:6379/2` (no live Postgres/Redis/RPC)
@@ -9,9 +9,9 @@
 
 Command: `.venv/bin/python -m pytest -p no:cacheprovider`
 
-**12 failed, 56 passed, 3 skipped, 2 warnings in 7.61s** — coverage 40% (`--cov-fail-under=80` removed from `pytest.ini`; it is now reported, not enforced)
+**12 failed, 58 passed, 3 skipped, 2 warnings** (~8s; up to ~70s when the live CoinGecko API returns 429) — coverage 40% (`--cov-fail-under=80` removed from `pytest.ini`; it is now reported, not enforced)
 
-History: 21/33/17 (initial) → 26/42/3 (after `[pytest]` header fix) → 12/56/3 (after `tests/unit/test_api.py` fix). The 17 "skips" were async tests that pytest-asyncio strict mode refused to run; with `asyncio_mode = auto` now active they execute — 9 pass, 5 fail (listed below as NEW). No previously-passing test regressed.
+History: 21/33/17 (initial) → 26/42/3 (after `[pytest]` header fix) → 12/56/3 (after `tests/unit/test_api.py` fix) → 12/58/3 (RateLimiter fix + 2 tests). The 17 "skips" were async tests that pytest-asyncio strict mode refused to run; with `asyncio_mode = auto` now active they execute — 9 pass, 5 fail (listed below as NEW). No previously-passing test regressed.
 
 Install-time blockers hit before the suite would collect (now fixed in `requirements.txt`):
 - `ModuleNotFoundError: No module named 'pkg_resources'` — `web3/__init__.py` imports `pkg_resources`; uv venvs ship no setuptools and setuptools ≥81 removed it → pin `setuptools<81`.
@@ -31,5 +31,5 @@ Install-time blockers hit before the suite would collect (now fixed in `requirem
 - `TestUniswapIntegration::test_swap_path_building` — `UniswapError: Cannot swap token with itself`
 - `TestTwitterIntegration::test_twitter_client_initialization_enabled` — `assert False` (line 335)
 
-`tests/unit/test_api.py` — **all passing (28/28)**. Was 15 failures: tests patched `api.deps.get_current_user`, but that function is captured inside `Depends()` at import time, so patches never took effect. Fixed by overriding via `app.dependency_overrides` (`authenticated_user` / `anonymous_user` / `trade_deps` fixtures) and patching `verify_nft_ownership` / `parse_trading_prompt` in the router modules where they are called.
+`tests/unit/test_api.py` — **all passing (30/30)**. Was 15 failures: tests patched `api.deps.get_current_user`, but that function is captured inside `Depends()` at import time, so patches never took effect. Fixed by overriding via `app.dependency_overrides` (`authenticated_user` / `anonymous_user` / `trade_deps` fixtures) and patching `verify_nft_ownership` / `parse_trading_prompt` in the router modules where they are called.
 

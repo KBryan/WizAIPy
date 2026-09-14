@@ -416,6 +416,39 @@ class TestRateLimiting:
             response = client.get("/health/ping")
             assert response.status_code == 200
 
+    @pytest.fixture
+    def fake_redis(self):
+        """Override only the Redis client so the real trade_rate_limiter runs."""
+        fake = Mock()
+        fake.get.return_value = None
+        undo = _override(get_redis_client, fake)
+        yield fake
+        undo()
+
+    def test_trade_rate_limiter_keys_on_wallet(self, fake_redis, authenticated_user):
+        """The limiter must not require a client-supplied request_id."""
+        with TestClient(app) as client:
+            response = client.post("/trade/execute",
+                headers={"Authorization": "Bearer test_token"},
+                json={"trade_type": "swap", "token_in": "ETH", "token_out": "USDC",
+                      "amount_in": 1.0, "dry_run": True}
+            )
+            assert response.status_code == 200
+        fake_redis.setex.assert_called_once()
+        key = fake_redis.setex.call_args.args[0]
+        assert key == f"rate_limit:wallet:{TEST_WALLET.lower()}"
+
+    def test_trade_rate_limiter_exceeded(self, fake_redis, authenticated_user):
+        """Requests over the limit get 429."""
+        fake_redis.get.return_value = str(trade_rate_limiter.max_requests)
+        with TestClient(app) as client:
+            response = client.post("/trade/execute",
+                headers={"Authorization": "Bearer test_token"},
+                json={"trade_type": "swap", "token_in": "ETH", "token_out": "USDC",
+                      "amount_in": 1.0, "dry_run": True}
+            )
+            assert response.status_code == 429
+
 
 class TestErrorHandling:
     """Test cases for error handling."""
