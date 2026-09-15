@@ -9,8 +9,9 @@ import aiohttp
 from web3 import Web3
 
 from core.contracts import get_uniswap
+from core.tokens import get_token_address
 from integrations.coingecko import CoinGeckoClient, CoinGeckoError
-from integrations.uniswap import UniswapV2Adapter, UniswapV3Adapter, create_uniswap_adapter
+from integrations.uniswap import UniswapV2Adapter, UniswapV3Adapter, UniswapError, create_uniswap_adapter
 from integrations.twitter import TwitterClient, TwitterError
 
 
@@ -281,6 +282,95 @@ class TestUniswapIntegration:
     
     @pytest.mark.unit
     @patch('integrations.uniswap.Web3', wraps=Web3)
+    async def test_v3_quote_uses_quoter(self, mock_web3):
+        """V3 quotes come from quoteExactInputSingle, not the V2 router."""
+        mock_w3_instance = Mock()
+        mock_w3_instance.is_connected.return_value = True
+        mock_web3.return_value = mock_w3_instance
+        
+        mock_contract = Mock()
+        mock_contract.functions.quoteExactInputSingle.return_value.call.return_value = 1600000000  # 1600 USDC
+        mock_w3_instance.eth.contract.return_value = mock_contract
+        
+        adapter = UniswapV3Adapter("ethereum")
+        quote = await adapter.get_quote("ETH", "USDC", 1.0)
+        
+        assert quote.exchange == "uniswap_v3"
+        assert quote.amount_out == 1600.0  # USDC decimals applied
+        assert quote.price == 1600.0
+        assert quote.route == [get_token_address("WETH"), get_token_address("USDC")]
+        mock_contract.functions.getAmountsOut.assert_not_called()
+        
+        # Every fee tier is probed with (WETH, USDC, fee, 1 ETH in wei, no price limit)
+        calls = mock_contract.functions.quoteExactInputSingle.call_args_list
+        assert [c.args[2] for c in calls] == list(UniswapV3Adapter.FEE_TIERS)
+        for c in calls:
+            assert c.args[0] == get_token_address("WETH")
+            assert c.args[1] == get_token_address("USDC")
+            assert c.args[3] == 10**18
+            assert c.args[4] == 0
+    
+    @pytest.mark.unit
+    @patch('integrations.uniswap.Web3', wraps=Web3)
+    async def test_v3_quote_picks_best_fee_tier(self, mock_web3):
+        """Tiers whose pool reverts are skipped; the best-paying tier wins and sets the fee."""
+        mock_w3_instance = Mock()
+        mock_w3_instance.is_connected.return_value = True
+        mock_web3.return_value = mock_w3_instance
+        
+        outputs = {500: Exception("pool does not exist"), 3000: 1600000000, 10000: 1590000000}
+        
+        def quote_call(token_in, token_out, fee, amount_in, limit):
+            result = Mock()
+            if isinstance(outputs[fee], Exception):
+                result.call.side_effect = outputs[fee]
+            else:
+                result.call.return_value = outputs[fee]
+            return result
+        
+        mock_contract = Mock()
+        mock_contract.functions.quoteExactInputSingle.side_effect = quote_call
+        mock_w3_instance.eth.contract.return_value = mock_contract
+        
+        adapter = UniswapV3Adapter("ethereum")
+        quote = await adapter.get_quote("ETH", "USDC", 1.0)
+        
+        assert quote.amount_out == 1600.0
+        assert quote.fees == pytest.approx(1.0 * 3000 / 1_000_000)  # 0.3% tier
+    
+    @pytest.mark.unit
+    @patch('integrations.uniswap.Web3', wraps=Web3)
+    async def test_v3_quote_no_pool_raises(self, mock_web3):
+        """If no fee tier has a pool the quote fails with a clear error."""
+        mock_w3_instance = Mock()
+        mock_w3_instance.is_connected.return_value = True
+        mock_web3.return_value = mock_w3_instance
+        
+        mock_contract = Mock()
+        mock_contract.functions.quoteExactInputSingle.return_value.call.side_effect = Exception("revert")
+        mock_w3_instance.eth.contract.return_value = mock_contract
+        
+        adapter = UniswapV3Adapter("ethereum")
+        with pytest.raises(UniswapError, match="No Uniswap V3 pool"):
+            await adapter.get_quote("DAI", "WBTC", 100.0)
+    
+    @pytest.mark.unit
+    @patch('integrations.uniswap.Web3', wraps=Web3)
+    async def test_v3_execute_trade_refuses(self, mock_web3):
+        """V3 execution is not implemented; it must not fall through to V2 swap calls."""
+        mock_w3_instance = Mock()
+        mock_w3_instance.is_connected.return_value = True
+        mock_web3.return_value = mock_w3_instance
+        mock_w3_instance.eth.contract.return_value = Mock()
+        
+        adapter = UniswapV3Adapter("ethereum")
+        quote = Mock(token_in="ETH", token_out="USDC", amount_in=1.0, amount_out=1600.0, route=None, gas_estimate=180000)
+        with pytest.raises(UniswapError, match="not implemented"):
+            await adapter.execute_trade(quote, "0x1234567890abcdef1234567890abcdef12345678", 0.5)
+        mock_w3_instance.eth.send_raw_transaction.assert_not_called()
+    
+    @pytest.mark.unit
+    @patch('integrations.uniswap.Web3', wraps=Web3)
     async def test_gas_estimation(self, mock_web3):
         """Test gas estimation."""
         mock_w3_instance = Mock()
@@ -306,12 +396,13 @@ class TestUniswapIntegration:
         mock_w3_instance.is_connected.return_value = True
         mock_web3.return_value = mock_w3_instance
         
-        # Mock contract calls
+        # One mock stands in for the V2 router and the V3 quoter
         mock_contract = Mock()
         mock_contract.functions.getAmountsOut.return_value.call.return_value = [
             1000000000000000000,
             1600000000
         ]
+        mock_contract.functions.quoteExactInputSingle.return_value.call.return_value = 1600000000
         mock_w3_instance.eth.contract.return_value = mock_contract
         
         adapter_v2 = UniswapV2Adapter("ethereum")

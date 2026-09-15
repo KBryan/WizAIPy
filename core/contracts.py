@@ -8,7 +8,7 @@ import time so a typo or placeholder fails on startup, not at swap time.
 """
 
 from dataclasses import dataclass
-from typing import Dict
+from typing import Dict, Optional
 
 from eth_utils import is_checksum_address
 
@@ -29,13 +29,17 @@ class UniswapDeployment:
     version: str
     router: str
     factory: str
+    quoter: Optional[str] = None  # V3 only: off-chain price quoter (QuoterV1)
 
 
-def _uniswap(version: str, router: str, factory: str) -> UniswapDeployment:
+def _uniswap(
+    version: str, router: str, factory: str, quoter: Optional[str] = None
+) -> UniswapDeployment:
     return UniswapDeployment(
         version,
         checksummed(f"uniswap {version} router", router),
         checksummed(f"uniswap {version} factory", factory),
+        checksummed(f"uniswap {version} quoter", quoter) if quoter else None,
     )
 
 
@@ -51,6 +55,7 @@ UNISWAP: Dict[str, Dict[str, UniswapDeployment]] = {
             "v3",
             router="0xE592427A0AEce92De3Edee1F18E0157C05861564",
             factory="0x1F98431c8aD98523631AE4a59f267346ea31F984",
+            quoter="0xb27308f9F90D607463bb33eA1BeBb41C27CE5AB6",
         ),
     },
     # skale / beam: no Uniswap deployments registered; see core.tokens for the
