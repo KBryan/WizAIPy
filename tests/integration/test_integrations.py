@@ -6,6 +6,7 @@ import pytest
 from unittest.mock import Mock, patch, AsyncMock
 from datetime import datetime, timedelta
 import aiohttp
+from web3 import Web3
 
 from integrations.coingecko import CoinGeckoClient, CoinGeckoError
 from integrations.uniswap import UniswapV2Adapter, UniswapV3Adapter, create_uniswap_adapter
@@ -136,7 +137,7 @@ class TestCoinGeckoIntegration:
         # Mock session to simulate API error
         mock_response = Mock()
         mock_response.status = 500
-        mock_response.text.return_value = "Internal Server Error"
+        mock_response.text = AsyncMock(return_value="Internal Server Error")
         
         with patch.object(client, 'session') as mock_session:
             mock_session.get.return_value.__aenter__.return_value = mock_response
@@ -149,8 +150,13 @@ class TestUniswapIntegration:
     """Integration tests for Uniswap adapters."""
     
     @pytest.mark.unit
-    def test_create_uniswap_adapter(self):
+    @patch('integrations.uniswap.Web3', wraps=Web3)
+    def test_create_uniswap_adapter(self, mock_web3):
         """Test Uniswap adapter factory."""
+        mock_w3_instance = Mock()
+        mock_w3_instance.is_connected.return_value = True
+        mock_web3.return_value = mock_w3_instance
+        
         # Test V2 adapter creation
         adapter_v2 = create_uniswap_adapter("v2", "ethereum")
         assert isinstance(adapter_v2, UniswapV2Adapter)
@@ -164,7 +170,7 @@ class TestUniswapIntegration:
             create_uniswap_adapter("v4", "ethereum")
     
     @pytest.mark.unit
-    @patch('integrations.uniswap.Web3')
+    @patch('integrations.uniswap.Web3', wraps=Web3)
     def test_uniswap_v2_initialization(self, mock_web3):
         """Test Uniswap V2 adapter initialization."""
         # Mock Web3 connection
@@ -180,7 +186,7 @@ class TestUniswapIntegration:
         assert "USDC" in adapter.token_addresses
     
     @pytest.mark.unit
-    @patch('integrations.uniswap.Web3')
+    @patch('integrations.uniswap.Web3', wraps=Web3)
     def test_token_address_resolution(self, mock_web3):
         """Test token address resolution."""
         mock_w3_instance = Mock()
@@ -196,14 +202,14 @@ class TestUniswapIntegration:
         # Test address passthrough
         custom_addr = "0x1234567890abcdef1234567890abcdef12345678"
         resolved_addr = adapter._get_token_address(custom_addr)
-        assert resolved_addr == custom_addr
+        assert resolved_addr.lower() == custom_addr.lower()  # returned checksummed
         
         # Test unknown token
         with pytest.raises(Exception):
             adapter._get_token_address("UNKNOWN_TOKEN")
     
     @pytest.mark.unit
-    @patch('integrations.uniswap.Web3')
+    @patch('integrations.uniswap.Web3', wraps=Web3)
     def test_swap_path_building(self, mock_web3):
         """Test swap path building logic."""
         mock_w3_instance = Mock()
@@ -222,7 +228,7 @@ class TestUniswapIntegration:
             adapter._build_swap_path("ETH", "ETH")
     
     @pytest.mark.unit
-    @patch('integrations.uniswap.Web3')
+    @patch('integrations.uniswap.Web3', wraps=Web3)
     async def test_get_quote(self, mock_web3):
         """Test getting trade quote."""
         mock_w3_instance = Mock()
@@ -250,7 +256,7 @@ class TestUniswapIntegration:
         assert quote.gas_estimate > 0
     
     @pytest.mark.unit
-    @patch('integrations.uniswap.Web3')
+    @patch('integrations.uniswap.Web3', wraps=Web3)
     async def test_gas_estimation(self, mock_web3):
         """Test gas estimation."""
         mock_w3_instance = Mock()
@@ -269,7 +275,7 @@ class TestUniswapIntegration:
     
     @pytest.mark.integration
     @pytest.mark.external
-    @patch('integrations.uniswap.Web3')
+    @patch('integrations.uniswap.Web3', wraps=Web3)
     async def test_uniswap_v3_quote_difference(self, mock_web3):
         """Test that V3 adapter provides different quotes than V2."""
         mock_w3_instance = Mock()
@@ -304,8 +310,8 @@ class TestTwitterIntegration:
     @patch('integrations.twitter.tweepy')
     def test_twitter_client_initialization_disabled(self, mock_tweepy):
         """Test Twitter client when disabled."""
-        with patch('config.get_settings') as mock_settings:
-            mock_settings.return_value.enable_twitter = False
+        with patch('integrations.twitter.settings') as settings:
+            settings.enable_twitter = False
             
             client = TwitterClient()
             assert not client.enabled
@@ -315,8 +321,7 @@ class TestTwitterIntegration:
     @patch('integrations.twitter.tweepy')
     def test_twitter_client_initialization_enabled(self, mock_tweepy):
         """Test Twitter client initialization when enabled."""
-        with patch('config.get_settings') as mock_settings:
-            settings = mock_settings.return_value
+        with patch('integrations.twitter.settings') as settings:
             settings.enable_twitter = True
             settings.twitter_bearer_token = "test_bearer"
             settings.twitter_api_key = "test_key"
@@ -338,8 +343,8 @@ class TestTwitterIntegration:
     @pytest.mark.unit
     async def test_post_trade_notification_disabled(self):
         """Test posting trade notification when Twitter is disabled."""
-        with patch('config.get_settings') as mock_settings:
-            mock_settings.return_value.enable_twitter = False
+        with patch('integrations.twitter.settings') as settings:
+            settings.enable_twitter = False
             
             client = TwitterClient()
             
@@ -361,8 +366,7 @@ class TestTwitterIntegration:
     @patch('integrations.twitter.tweepy')
     async def test_post_trade_notification_enabled(self, mock_tweepy):
         """Test posting trade notification when Twitter is enabled."""
-        with patch('config.get_settings') as mock_settings:
-            settings = mock_settings.return_value
+        with patch('integrations.twitter.settings') as settings:
             settings.enable_twitter = True
             settings.twitter_bearer_token = "test_bearer"
             settings.twitter_api_key = "test_key"
@@ -402,8 +406,7 @@ class TestTwitterIntegration:
     @patch('integrations.twitter.tweepy')
     async def test_post_strategy_signal(self, mock_tweepy):
         """Test posting strategy signal notification."""
-        with patch('config.get_settings') as mock_settings:
-            settings = mock_settings.return_value
+        with patch('integrations.twitter.settings') as settings:
             settings.enable_twitter = True
             settings.twitter_bearer_token = "test_bearer"
             settings.twitter_api_key = "test_key"
@@ -438,8 +441,8 @@ class TestTwitterIntegration:
     @pytest.mark.unit
     def test_truncate_hash(self):
         """Test transaction hash truncation."""
-        with patch('config.get_settings') as mock_settings:
-            mock_settings.return_value.enable_twitter = False
+        with patch('integrations.twitter.settings') as settings:
+            settings.enable_twitter = False
             
             client = TwitterClient()
             
@@ -501,7 +504,7 @@ class TestIntegrationErrorHandling:
                 await client._make_request("test")
     
     @pytest.mark.unit
-    @patch('integrations.uniswap.Web3')
+    @patch('integrations.uniswap.Web3', wraps=Web3)
     async def test_uniswap_connection_error(self, mock_web3):
         """Test Uniswap connection error handling."""
         mock_w3_instance = Mock()
@@ -515,8 +518,7 @@ class TestIntegrationErrorHandling:
     @patch('integrations.twitter.tweepy')
     async def test_twitter_api_error(self, mock_tweepy):
         """Test Twitter API error handling."""
-        with patch('config.get_settings') as mock_settings:
-            settings = mock_settings.return_value
+        with patch('integrations.twitter.settings') as settings:
             settings.enable_twitter = True
             settings.twitter_bearer_token = "test_bearer"
             settings.twitter_api_key = "test_key"
