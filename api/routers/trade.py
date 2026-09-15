@@ -17,6 +17,7 @@ import redis
 
 from config import get_settings
 from api.deps import get_current_user, trade_rate_limiter, get_redis_client
+from core.tokens import get_token, get_token_address, NATIVE_TOKEN_ADDRESS
 from core.tasks import execute_trade_task
 
 router = APIRouter()
@@ -372,14 +373,14 @@ async def get_portfolio(
                 tokens=[
                     {
                         "symbol": "ETH",
-                        "address": "0x0000000000000000000000000000000000000000",
+                        "address": NATIVE_TOKEN_ADDRESS,
                         "balance": 2.5,
                         "value_usd": 4000.0,
                         "price_usd": 1600.0
                     },
                     {
                         "symbol": "USDC",
-                        "address": "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48",
+                        "address": get_token_address("USDC"),
                         "balance": 1000.0,
                         "value_usd": 1000.0,
                         "price_usd": 1.0
@@ -404,14 +405,14 @@ async def get_portfolio(
                 tokens=[
                     {
                         "symbol": "ETH",
-                        "address": "0x0000000000000000000000000000000000000000",
+                        "address": NATIVE_TOKEN_ADDRESS,
                         "balance": 2.5,
                         "value_usd": 4000.0,
                         "price_usd": 1600.0
                     },
                     {
                         "symbol": "USDC",
-                        "address": "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48",
+                        "address": get_token_address("USDC"),
                         "balance": 1000.0,
                         "value_usd": 1000.0,
                         "price_usd": 1.0
@@ -438,20 +439,10 @@ async def get_portfolio(
 
         logger.info(f"Fetching portfolio for wallet: {wallet_address}")
 
-        # Token contracts (mainnet addresses)
+        # ERC-20 tokens to report, resolved from the shared registry
         token_contracts = {
-            "USDC": {
-                "address": "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48",
-                "decimals": 6
-            },
-            "USDT": {
-                "address": "0xdAC17F958D2ee523a2206206994597C13D831ec7",
-                "decimals": 6
-            },
-            "WETH": {
-                "address": "0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2",
-                "decimals": 18
-            }
+            symbol: {"address": get_token(symbol).address, "decimals": get_token(symbol).decimals}
+            for symbol in ("USDC", "USDT", "WETH")
         }
 
         # ERC20 ABI for balance queries
@@ -507,7 +498,7 @@ async def get_portfolio(
             if eth_balance > 0:
                 tokens.append({
                     "symbol": "ETH",
-                    "address": "0x0000000000000000000000000000000000000000",  # ETH native
+                    "address": NATIVE_TOKEN_ADDRESS,
                     "balance": eth_balance,
                     "value_usd": eth_value,
                     "price_usd": eth_price

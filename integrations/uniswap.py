@@ -15,6 +15,7 @@ from eth_account import Account
 
 from config import get_settings, SUPPORTED_NETWORKS
 from core.execution.engine import ExchangeAdapter, TradeQuote, ExecutionError
+from core.tokens import token_addresses, UnknownTokenError
 
 logger = logging.getLogger(__name__)
 settings = get_settings()
@@ -101,15 +102,11 @@ class UniswapV2Adapter(ExchangeAdapter):
         self.w3 = self._get_web3_connection()
         self.router_contract = self._get_router_contract()
         
-        # Common token addresses (Ethereum mainnet)
-        self.token_addresses = {
-            "ETH": "0x0000000000000000000000000000000000000000",  # Native ETH
-            "WETH": "0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2",
-            "USDC": "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48",
-            "USDT": "0xdAC17F958D2ee523a2206206994597C13D831ec7",
-            "DAI": "0x6B175474E89094C44Da98b954EedeAC495271d0F",
-            "WBTC": "0x2260FAC5E5542a773Aa44fBCfeDf7C193bc2C599"
-        }
+        # Symbol -> address for this network, from the shared registry
+        try:
+            self.token_addresses = token_addresses(network)
+        except UnknownTokenError as e:
+            raise UniswapError(str(e))
     
     def _get_web3_connection(self) -> Web3:
         """Get Web3 connection for the network."""
