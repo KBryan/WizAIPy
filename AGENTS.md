@@ -167,8 +167,7 @@ Swagger UI is only mounted when `DEBUG=true` (`/docs`, `/redoc`).
 - Do not add dependencies without pinning them in `requirements.txt`.
 - Do not hand-edit applied Alembic revisions; create a new revision instead.
 - Do not commit credentials, private keys, RPC URLs with embedded keys, or `.env`.
-- Do not commit `*.backup*` files (`api/main.py.backup`, `api/deps.py.backup`, `core/tasks.py.backup*` are tracked and should be removed).
-- Do not commit `celerybeat-schedule` (runtime state; currently tracked).
+- Do not commit `*.backup*` files or `celerybeat-schedule` (both gitignored; use git history instead of backup copies).
 - Do not widen `allow_origins=["*"]` / `allowed_hosts=["*"]` in `api/main.py` further; tighten for production.
 
 ---
@@ -276,7 +275,6 @@ Full template: `env.example`. Required (no default in `config.Settings`):
 - Token addresses/decimals live only in `core/tokens.py` (consolidated 2026-09-14 after three divergent copies produced placeholder addresses). Only `ethereum` has a registry; resolving a token on `skale`/`beam` raises `UnknownTokenError` rather than silently using mainnet addresses — add a per-network table there before trading on those chains. Uniswap router/factory addresses live only in `core/contracts.py` (`get_uniswap(version, network)`).
 - `web3==6.12.0` requires the `setuptools<81` / `eth-typing<5` pins in `requirements.txt`; upgrading web3 to 7.x would remove the need.
 - Lint/format/types are far from clean: flake8 756 findings, black would reformat 25/35 files, mypy 111 errors in 16 files.
-- Tracked artifacts that should not be: `*.backup*` files, `celerybeat-schedule`.
 - `UniswapV3Adapter.get_quote` uses the V3 Quoter (single-hop, best of the 0.05/0.3/1% fee tiers); `execute_trade` on it raises `UniswapError` — the V2 router calls do not exist on the V3 SwapRouter. Live V3 swaps go through `core/tasks.py:execute_trade` (`exactInputSingle`). Both adapters convert amounts with `core.tokens` decimals; unregistered raw addresses fall back to 18 with a warning.
 - `api/routers/twitter.py` exists but the router is commented out in `api/main.py`.
 - `datetime.utcnow()` used throughout (deprecated in 3.12).

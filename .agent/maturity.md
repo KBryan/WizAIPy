@@ -23,7 +23,6 @@
 - `.pre-commit-config.yaml` (README references pre-commit)
 - flake8 / black / mypy configuration files (`setup.cfg`, `pyproject.toml`, or `.flake8`)
 - PR / issue templates
-- Repository hygiene: tracked `*.backup*` files and `celerybeat-schedule`
 
 ## Path to Next Level (3 — More)
 1. Fix `pytest.ini` header to `[pytest]`; add `pytest-cov` and drop `--cov-fail-under=80` until coverage is real.
@@ -33,4 +32,3 @@
 5. Add `.github/workflows/ci.yml` running test + lint + format + typecheck with the env exports from AGENTS.md.
 6. Add `.pre-commit-config.yaml` (black, flake8) and a `pyproject.toml`/`setup.cfg` with tool config.
 7. Add `.github/PULL_REQUEST_TEMPLATE.md` mirroring the Review Expectations checklist.
-8. Remove tracked `*.backup*` files and `celerybeat-schedule`; add both to `.gitignore`.
