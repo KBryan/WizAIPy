@@ -9,6 +9,7 @@ import aiohttp
 from web3 import Web3
 
 from core.contracts import get_uniswap
+from core.execution.engine import TradeQuote
 from core.tokens import get_token_address
 from integrations.coingecko import CoinGeckoClient, CoinGeckoError
 from integrations.uniswap import UniswapV2Adapter, UniswapV3Adapter, UniswapError, create_uniswap_adapter
@@ -276,9 +277,47 @@ class TestUniswapIntegration:
         assert quote.token_in == "ETH"
         assert quote.token_out == "USDC"
         assert quote.amount_in == 1.0
-        assert quote.amount_out > 0
-        assert quote.price > 0
+        assert quote.amount_out == 1600.0  # 1600000000 base units at 6 decimals
+        assert quote.price == 1600.0
         assert quote.gas_estimate > 0
+        # 1 ETH was sent to the router as 10**18 wei
+        amount_in_wei = mock_contract.functions.getAmountsOut.call_args.args[0]
+        assert amount_in_wei == 10**18
+    
+    @pytest.mark.unit
+    @patch('integrations.uniswap.Account')
+    @patch('integrations.uniswap.Web3', wraps=Web3)
+    async def test_v2_execute_trade_encodes_token_decimals(self, mock_web3, mock_account):
+        """On-chain amounts must use each token's decimals (USDC 6, DAI 18), not a flat 18."""
+        mock_w3_instance = Mock()
+        mock_w3_instance.is_connected.return_value = True
+        mock_w3_instance.eth.get_transaction_count.return_value = 7
+        mock_w3_instance.eth.send_raw_transaction.return_value.hex.return_value = "0xabc"
+        mock_web3.return_value = mock_w3_instance
+        
+        mock_contract = Mock()
+        mock_w3_instance.eth.contract.return_value = mock_contract
+        
+        adapter = UniswapV2Adapter("ethereum")
+        wallet = "0x1234567890abcdef1234567890abcdef12345678"
+        quote = TradeQuote(
+            exchange="uniswap_v2", token_in="USDC", token_out="DAI",
+            amount_in=1000.0, amount_out=999.0, price=0.999, gas_estimate=200000,
+            slippage=0.01, fees=3.0, valid_until=datetime.utcnow() + timedelta(minutes=5),
+            route=[get_token_address("USDC"), get_token_address("DAI")],
+        )
+        
+        tx_hash = await adapter.execute_trade(quote, wallet, slippage=1.0)
+        
+        assert tx_hash == "0xabc"
+        swap = mock_contract.functions.swapExactTokensForTokens
+        swap.assert_called_once()
+        amount_in_wei, min_out_wei, path, to, _deadline = swap.call_args.args
+        assert amount_in_wei == 1000 * 10**6          # USDC has 6 decimals
+        assert min_out_wei == 989_010_000_000_000_000_000  # 999 * 0.99 DAI at 18 decimals, exact
+        assert path == quote.route
+        assert to == wallet
+        mock_contract.functions.swapExactETHForTokens.assert_not_called()
     
     @pytest.mark.unit
     @patch('integrations.uniswap.Web3', wraps=Web3)

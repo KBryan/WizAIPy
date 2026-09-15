@@ -195,7 +195,7 @@ Swagger UI is only mounted when `DEBUG=true` (`/docs`, `/redoc`).
 
 ### All Changes
 
-- [ ] `pytest` passes (suite is green: 85 pass / 3 live-API skips); no new failures
+- [ ] `pytest` passes (suite is green: 86 pass / 3 live-API skips); no new failures
 - [ ] `flake8` introduces no new warnings; `black --check` clean on touched files
 - [ ] No unrelated changes included; no `.backup` files added
 - [ ] Commit messages follow conventional format: `type(scope): description`
@@ -276,7 +276,7 @@ Full template: `env.example`. Required (no default in `config.Settings`):
 - `web3==6.12.0` requires the `setuptools<81` / `eth-typing<5` pins in `requirements.txt`; upgrading web3 to 7.x would remove the need.
 - Lint/format/types are far from clean: flake8 756 findings, black would reformat 25/35 files, mypy 111 errors in 16 files.
 - Tracked artifacts that should not be: `*.backup*` files, `celerybeat-schedule`.
-- `UniswapV3Adapter.get_quote` uses the V3 Quoter (single-hop, best of the 0.05/0.3/1% fee tiers); `execute_trade` on it raises `UniswapError` — the V2 router calls do not exist on the V3 SwapRouter. Live V3 swaps go through `core/tasks.py:execute_trade` (`exactInputSingle`). `UniswapV2Adapter.get_quote` still assumes 18 decimals for both tokens.
+- `UniswapV3Adapter.get_quote` uses the V3 Quoter (single-hop, best of the 0.05/0.3/1% fee tiers); `execute_trade` on it raises `UniswapError` — the V2 router calls do not exist on the V3 SwapRouter. Live V3 swaps go through `core/tasks.py:execute_trade` (`exactInputSingle`). Both adapters convert amounts with `core.tokens` decimals; unregistered raw addresses fall back to 18 with a warning.
 - `api/routers/twitter.py` exists but the router is commented out in `api/main.py`.
 - `datetime.utcnow()` used throughout (deprecated in 3.12).
 - No CI configuration (`.github/workflows` absent); README mentions pre-commit but no `.pre-commit-config.yaml` exists.

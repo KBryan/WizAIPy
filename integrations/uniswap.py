@@ -157,6 +157,19 @@ class UniswapV2Adapter(ExchangeAdapter):
         
         return Web3.to_checksum_address(address)
     
+    def _to_base_units(self, amount: float, token: str) -> int:
+        """Human amount -> integer base units using the token's registered decimals."""
+        if is_supported_token(token, self.network):
+            return to_base_units(amount, token, self.network)
+        self.logger.warning(f"Unknown decimals for {token}; assuming 18")
+        return int(Decimal(str(amount)) * 10**18)
+    
+    def _from_base_units(self, amount: int, token: str) -> float:
+        """Integer base units -> human amount using the token's registered decimals."""
+        if is_supported_token(token, self.network):
+            return from_base_units(amount, token, self.network)
+        return amount / 10**18
+    
     def _build_swap_path(self, token_in: str, token_out: str) -> List[str]:
         """
         Build swap path between two tokens.
@@ -225,8 +238,8 @@ class UniswapV2Adapter(ExchangeAdapter):
             # Build swap path
             path = self._build_swap_path(token_in, token_out)
             
-            # Convert amount to wei (assuming 18 decimals for simplicity)
-            amount_in_wei = int(amount_in * 10**18)
+            # Convert amount to base units using the token's decimals
+            amount_in_wei = self._to_base_units(amount_in, token_in)
             
             # Get amounts out from Uniswap
             amounts_out = await asyncio.to_thread(
@@ -234,7 +247,7 @@ class UniswapV2Adapter(ExchangeAdapter):
             )
             
             amount_out_wei = amounts_out[-1]
-            amount_out = amount_out_wei / 10**18
+            amount_out = self._from_base_units(amount_out_wei, token_out)
             
             # Calculate price and slippage
             price = amount_out / amount_in if amount_in > 0 else 0
@@ -291,7 +304,8 @@ class UniswapV2Adapter(ExchangeAdapter):
             
             # Calculate minimum amount out with slippage
             min_amount_out = quote.amount_out * (1 - slippage / 100)
-            min_amount_out_wei = int(min_amount_out * 10**18)
+            min_amount_out_wei = self._to_base_units(min_amount_out, quote.token_out)
+            amount_in_wei = self._to_base_units(quote.amount_in, quote.token_in)
             
             # Set deadline (10 minutes from now)
             deadline = int((datetime.utcnow() + timedelta(minutes=10)).timestamp())
@@ -299,8 +313,6 @@ class UniswapV2Adapter(ExchangeAdapter):
             # Build transaction
             if quote.token_in.upper() == "ETH":
                 # ETH to token swap
-                amount_in_wei = int(quote.amount_in * 10**18)
-                
                 transaction = self.router_contract.functions.swapExactETHForTokens(
                     min_amount_out_wei,
                     path,
@@ -315,8 +327,6 @@ class UniswapV2Adapter(ExchangeAdapter):
                 })
             else:
                 # Token to token swap
-                amount_in_wei = int(quote.amount_in * 10**18)
-                
                 transaction = self.router_contract.functions.swapExactTokensForTokens(
                     amount_in_wei,
                     min_amount_out_wei,
@@ -494,17 +504,6 @@ class UniswapV3Adapter(UniswapV2Adapter):
         except Exception as e:
             self.logger.error(f"Error getting Uniswap V3 quote: {e}")
             raise UniswapError(f"Failed to get quote: {e}")
-    
-    def _to_base_units(self, amount: float, token: str) -> int:
-        if is_supported_token(token, self.network):
-            return to_base_units(amount, token, self.network)
-        self.logger.warning(f"Unknown decimals for {token}; assuming 18")
-        return int(Decimal(str(amount)) * 10**18)
-    
-    def _from_base_units(self, amount: int, token: str) -> float:
-        if is_supported_token(token, self.network):
-            return from_base_units(amount, token, self.network)
-        return amount / 10**18
     
     async def execute_trade(self, quote: TradeQuote, wallet_address: str, slippage: float) -> str:
         """Not implemented: the inherited V2 swap calls do not exist on the V3 SwapRouter."""
