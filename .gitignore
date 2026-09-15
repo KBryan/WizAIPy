@@ -83,3 +83,4 @@ celerybeat-schedule*
 # Coverage data
 .coverage
 .coverage.*
+coverage.xml

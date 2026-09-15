@@ -426,8 +426,7 @@ class TestUniswapIntegration:
         gas_token = await adapter.estimate_gas("USDC", "DAI", 1000.0)
         assert gas_token == 200000
     
-    @pytest.mark.integration
-    @pytest.mark.external
+    @pytest.mark.unit
     @patch('integrations.uniswap.Web3', wraps=Web3)
     async def test_uniswap_v3_quote_difference(self, mock_web3):
         """Test that V3 adapter provides different quotes than V2."""

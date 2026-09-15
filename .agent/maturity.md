@@ -1,7 +1,7 @@
 # Repository Maturity Classification
 
 **Date**: 2026-09-14
-**Level**: 2 — Better
+**Level**: 2 — Better (CI added 2026-09-15; templates and pre-commit still missing for Level 3)
 **Justification**: Before this run the repo was Level 0 (AGENTS.md was an unfilled template, manifest.yml had empty source/tests/validation fields, no working validation commands documented). `/prime` produced a complete AGENTS.md and manifest.yml, and the discovered test/lint/format/typecheck commands all execute (Level 2). They execute but are not green — 21/54 tests fail and lint/format/types are far from clean — and the repo has no CI, no templates, and no `.pre-commit-config.yaml`, so it does not yet meet Level 3.
 
 ## What Exists
@@ -19,7 +19,6 @@
 - Green test baseline (21 failures — mostly test-side patch targets; see `.agent/baseline.md`)
 - Active pytest config (`pytest.ini` uses `[tool:pytest]`, which pytest ignores; `pytest-cov` not in requirements)
 - Working fresh install: `requirements.txt` lacks `setuptools<81` and `eth-typing<5` pins needed by `web3==6.12.0`
-- CI pipeline (`.github/workflows/` absent)
 - `.pre-commit-config.yaml` (README references pre-commit)
 - flake8 / black / mypy configuration files (`setup.cfg`, `pyproject.toml`, or `.flake8`)
 - PR / issue templates
@@ -29,6 +28,5 @@
 2. Pin `setuptools<81` and `eth-typing<5` in `requirements.txt` (or upgrade web3 to 7.x).
 3. Fix `tests/unit/test_api.py` patch targets (`api.routers.<router>.get_current_user` instead of `api.deps.get_current_user`) or set `BYPASS_NFT_GATE=true` in a test fixture — recovers ~15 tests.
 4. Mock `Web3` in `tests/integration/test_integrations.py` Uniswap tests (4 tests) and fix 3 momentum-strategy assertions.
-5. Add `.github/workflows/ci.yml` running test + lint + format + typecheck with the env exports from AGENTS.md.
 6. Add `.pre-commit-config.yaml` (black, flake8) and a `pyproject.toml`/`setup.cfg` with tool config.
 7. Add `.github/PULL_REQUEST_TEMPLATE.md` mirroring the Review Expectations checklist.

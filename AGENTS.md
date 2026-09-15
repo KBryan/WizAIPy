@@ -42,6 +42,7 @@
 | `k8s/` | infra | Kubernetes `deployment.yaml`, `service.yaml` | — |
 | `docs/` | docs | `API_DOCUMENTATION.md`, `DEPLOYMENT_GUIDE.md` | — |
 | `.claude/` | agent | Claude Code hooks, commands (skills), settings | `.claude/settings.json` |
+| `.github/workflows/ci.yml` | ci | GitHub Actions: pytest on 3.11 + 3.12 (`-m "not external"`), flake8 error gate; full flake8/black/mypy informational | — |
 
 ---
 
@@ -100,7 +101,7 @@ export SECRET_KEY=test DATABASE_URL=sqlite:///./test.db REDIS_URL=redis://localh
   ETHEREUM_RPC_URL=http://localhost:8545 PRIVATE_KEY=0x0000000000000000000000000000000000000000000000000000000000000001 \
   CELERY_BROKER_URL=redis://localhost:6379/1 CELERY_RESULT_BACKEND=redis://localhost:6379/2
 
-# Run tests
+# Run tests (CI runs this with -m "not external" to skip live CoinGecko/Twitter calls)
 <!-- DETECTED:test_command -->.venv/bin/python -m pytest -p no:cacheprovider<!-- /DETECTED -->
 
 # Run linter
@@ -278,7 +279,7 @@ Full template: `env.example`. Required (no default in `config.Settings`):
 - `UniswapV3Adapter.get_quote` uses the V3 Quoter (single-hop, best of the 0.05/0.3/1% fee tiers); `execute_trade` on it raises `UniswapError` — the V2 router calls do not exist on the V3 SwapRouter. Live V3 swaps go through `core/tasks.py:execute_trade` (`exactInputSingle`). Both adapters convert amounts with `core.tokens` decimals; unregistered raw addresses fall back to 18 with a warning.
 - `api/routers/twitter.py` exists but the router is commented out in `api/main.py`.
 - `datetime.utcnow()` used throughout (deprecated in 3.12).
-- No CI configuration (`.github/workflows` absent); README mentions pre-commit but no `.pre-commit-config.yaml` exists.
+- README mentions pre-commit but no `.pre-commit-config.yaml` exists. CI's full flake8/black/mypy steps are `continue-on-error` until the existing debt is cleared; flip them to blocking once counts reach zero.
 
 ### Recent Changes
 
