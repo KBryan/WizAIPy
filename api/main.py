@@ -6,12 +6,15 @@ from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.trustedhost import TrustedHostMiddleware
 from fastapi.responses import JSONResponse
+import asyncio
 import logging
 import time
 from contextlib import asynccontextmanager
 
 from config import get_settings
 from api.routers import auth, trade, health, admin  # , twitter
+from core.execution.engine import trade_engine
+from core.execution.adapters import register_default_adapters
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -28,6 +31,11 @@ async def lifespan(app: FastAPI):
     logger.info(f"Debug mode: {settings.debug}")
     logger.info(f"Real data mode: {settings.real_data_mode}")
     logger.info(f"NFT gate bypass: {settings.bypass_nft_gate}")
+    
+    # Wire exchange adapters into the execution engine. Construction dials the
+    # RPC node, so run it off the event loop; an unreachable node only costs
+    # that adapter, not startup.
+    await asyncio.to_thread(register_default_adapters, trade_engine)
     
     yield
     
