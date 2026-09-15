@@ -44,6 +44,7 @@
 | `.claude/` | agent | Claude Code hooks, commands (skills), settings | `.claude/settings.json` |
 | `.github/workflows/ci.yml` | ci | GitHub Actions: pytest on 3.11 + 3.12 (`-m "not external"`), flake8 error gate; full flake8/black/mypy informational | — |
 | `.pre-commit-config.yaml` | hooks | black, flake8 error gate, whitespace/EOF fixers, YAML check, private-key and debug-statement detection — on staged files only | — |
+| `.github/PULL_REQUEST_TEMPLATE.md` | template | PR body: summary, risk-area checkboxes (mirror the Escalation Triggers), behaviour changes, test plan, checklist | — |
 
 ---
 
