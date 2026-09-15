@@ -11,6 +11,7 @@ from fastapi.testclient import TestClient
 from api.main import app
 from api.deps import get_current_user, get_optional_user, trade_rate_limiter, api_rate_limiter, get_redis_client
 from core.execution.engine import trade_engine, TradeQuote
+import core.execution.adapters as adapters_module
 
 TEST_WALLET = "0x1234567890abcdef1234567890abcdef12345678"
 
@@ -430,12 +431,41 @@ class TestQuoteEndpoint:
         assert response.status_code == 422
 
     def test_no_adapters_is_503(self, no_rate_limit, authenticated_user):
-        with patch.object(trade_engine, "adapters", {}):
+        with patch.object(trade_engine, "adapters", {}), \
+             patch("core.execution.adapters.register_default_adapters", return_value={}) as register:
+            adapters_module._last_attempt.clear()
             with TestClient(app) as client:
                 response = client.get("/trade/quote", params={
                     "token_in": "ETH", "token_out": "USDC", "amount_in": 1.0
                 }, headers={"Authorization": "Bearer test_token"})
         assert response.status_code == 503
+        register.assert_called_once()  # the 503 path tried to re-register
+
+    def test_recovers_once_node_is_reachable(self, no_rate_limit, authenticated_user):
+        """503 while the node is down, then 200 on the next request after it recovers."""
+        node_up = False
+
+        def register(engine, network):
+            if not node_up:
+                return {}
+            adapter = _fake_adapter("uniswap_v3", amount_out=1602.0, fees=0.0005)
+            engine.register_adapter("uniswap_v3", adapter)
+            return {"uniswap_v3": adapter}
+
+        params = {"token_in": "ETH", "token_out": "USDC", "amount_in": 1.0}
+        headers = {"Authorization": "Bearer test_token"}
+        with patch.object(trade_engine, "adapters", {}), \
+             patch("core.execution.adapters.register_default_adapters", side_effect=register):
+            adapters_module._last_attempt.clear()
+            with TestClient(app) as client:
+                assert client.get("/trade/quote", params=params, headers=headers).status_code == 503
+
+                node_up = True
+                adapters_module._last_attempt.clear()  # cooldown elapsed
+                response = client.get("/trade/quote", params=params, headers=headers)
+
+        assert response.status_code == 200
+        assert response.json()["exchange"] == "uniswap_v3"
 
     def test_all_adapters_failing_is_503(self, engine_adapters, no_rate_limit, authenticated_user):
         for adapter in engine_adapters.values():

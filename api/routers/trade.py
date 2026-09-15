@@ -18,6 +18,7 @@ import redis
 from config import get_settings
 from api.deps import get_current_user, trade_rate_limiter, api_rate_limiter, get_redis_client
 from core.execution.engine import trade_engine
+from core.execution.adapters import ensure_adapters
 from core.tokens import get_token, get_token_address, NATIVE_TOKEN_ADDRESS
 from core.tasks import execute_trade_task
 
@@ -306,9 +307,8 @@ async def get_quote(
             detail="token_in and token_out must differ"
         )
 
-    available = sorted(
-        name for name, adapter in trade_engine.adapters.items() if adapter.network == network
-    )
+    # Retries registration if startup found no reachable node (rate-limited)
+    available = await ensure_adapters(trade_engine, network)
     if not available:
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,

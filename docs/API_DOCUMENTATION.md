@@ -337,7 +337,7 @@ curl "http://localhost:8000/trade/quote?token_in=ETH&token_out=USDC&amount_in=1.
 |---|---|
 | 400 | `token_in` equals `token_out`, or `exchange` is not registered on the network |
 | 422 | `amount_in` is not > 0 or a required parameter is missing |
-| 503 | No exchange adapters are registered for the network (RPC unreachable), or none could produce a quote |
+| 503 | No exchange adapters are registered for the network (RPC unreachable), or none could produce a quote. Registration is retried automatically, at most every 30s, so the endpoint recovers once the node is reachable |
 
 #### GET /trade/status/{trade_id}
 

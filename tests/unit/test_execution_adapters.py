@@ -7,7 +7,10 @@ from unittest.mock import Mock, patch
 from web3 import Web3
 
 from core.execution.engine import TradeExecutionEngine
-from core.execution.adapters import register_default_adapters
+import asyncio
+
+import core.execution.adapters as adapters_module
+from core.execution.adapters import register_default_adapters, ensure_adapters
 from integrations.uniswap import (
     UniswapV2Adapter,
     UniswapV3Adapter,
@@ -95,3 +98,87 @@ class TestAppStartup:
                 pass
 
         register.assert_called_once_with(trade_engine)
+
+
+class TestEnsureAdapters:
+    """Lazy re-registration when the engine has no adapters for a network."""
+
+    @pytest.fixture(autouse=True)
+    def reset_cooldown(self):
+        adapters_module._last_attempt.clear()
+        yield
+        adapters_module._last_attempt.clear()
+
+    @staticmethod
+    def _engine_with(*exchanges):
+        engine = TradeExecutionEngine()
+        for name in exchanges:
+            adapter = Mock()
+            adapter.network = "ethereum"
+            engine.adapters[name] = adapter
+        return engine
+
+    @pytest.mark.unit
+    async def test_returns_registered_without_retrying(self):
+        engine = self._engine_with("uniswap_v2", "uniswap_v3")
+        with patch.object(adapters_module, "register_default_adapters") as register:
+            assert await ensure_adapters(engine) == ["uniswap_v2", "uniswap_v3"]
+        register.assert_not_called()
+
+    @pytest.mark.unit
+    async def test_retries_registration_when_empty(self):
+        engine = TradeExecutionEngine()
+
+        def register(eng, network):
+            adapter = Mock()
+            adapter.network = network
+            eng.register_adapter("uniswap_v2", adapter)
+            return {"uniswap_v2": adapter}
+
+        with patch.object(adapters_module, "register_default_adapters", side_effect=register) as mock_register:
+            assert await ensure_adapters(engine) == ["uniswap_v2"]
+        mock_register.assert_called_once_with(engine, "ethereum")
+
+    @pytest.mark.unit
+    async def test_failed_retry_respects_cooldown(self):
+        engine = TradeExecutionEngine()
+        with patch.object(adapters_module, "register_default_adapters", return_value={}) as register:
+            assert await ensure_adapters(engine, cooldown=60) == []
+            assert await ensure_adapters(engine, cooldown=60) == []  # within cooldown: no second dial
+            assert register.call_count == 1
+
+            adapters_module._last_attempt["ethereum"] -= 61  # cooldown elapsed
+            assert await ensure_adapters(engine, cooldown=60) == []
+            assert register.call_count == 2
+
+    @pytest.mark.unit
+    async def test_startup_attempt_starts_the_cooldown(self):
+        """register_default_adapters itself stamps the attempt, so a request right
+        after a failed startup does not immediately re-dial the node."""
+        engine = TradeExecutionEngine()
+        with patch.object(adapters_module, "_adapter_factories", return_value={}):
+            register_default_adapters(engine, "ethereum")  # startup: nothing registered
+        with patch.object(adapters_module, "register_default_adapters") as register:
+            assert await ensure_adapters(engine, cooldown=60) == []
+        register.assert_not_called()
+
+    @pytest.mark.unit
+    async def test_concurrent_callers_share_one_attempt(self):
+        engine = TradeExecutionEngine()
+        calls = 0
+
+        def slow_register(eng, network):
+            nonlocal calls
+            calls += 1
+            import time
+            time.sleep(0.05)  # runs in a worker thread via asyncio.to_thread
+            adapter = Mock()
+            adapter.network = network
+            eng.register_adapter("uniswap_v3", adapter)
+            return {"uniswap_v3": adapter}
+
+        with patch.object(adapters_module, "register_default_adapters", side_effect=slow_register):
+            results = await asyncio.gather(*(ensure_adapters(engine) for _ in range(5)))
+
+        assert calls == 1
+        assert all(r == ["uniswap_v3"] for r in results)

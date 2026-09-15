@@ -48,7 +48,7 @@
 ## Architecture
 
 - **Service type**: REST API (FastAPI, served by uvicorn/gunicorn) + Celery worker & beat scheduler; deployed as containers.
-- **Execution engine**: `core.execution.engine.trade_engine` is a process-wide singleton. `api/main.py`'s lifespan calls `register_default_adapters(trade_engine)`, which builds one adapter per exchange in `config.SUPPORTED_EXCHANGES` that has an implementation (Uniswap V2/V3; SushiSwap has none). Adapter construction dials the RPC node — an unreachable node drops that adapter with a warning, it does not fail startup. `GET /trade/quote` exposes `trade_engine.get_best_quote()` (net-of-fees comparison across registered adapters; 503 when none are registered). `/trade/prompt` and `/trade/execute` still execute via Celery (`core/tasks.py`), not the engine.
+- **Execution engine**: `core.execution.engine.trade_engine` is a process-wide singleton. `api/main.py`'s lifespan calls `register_default_adapters(trade_engine)`, which builds one adapter per exchange in `config.SUPPORTED_EXCHANGES` that has an implementation (Uniswap V2/V3; SushiSwap has none). Adapter construction dials the RPC node — an unreachable node drops that adapter with a warning, it does not fail startup. `GET /trade/quote` exposes `trade_engine.get_best_quote()` (net-of-fees comparison across registered adapters). If no adapters are registered for the network, `ensure_adapters()` retries registration lazily — serialised under a lock and at most once per `RETRY_COOLDOWN_SECONDS` (30s) per network — so the app recovers when the RPC node comes back without a restart; it returns 503 until then. `/trade/prompt` and `/trade/execute` still execute via Celery (`core/tasks.py`), not the engine.
 - **Database**: PostgreSQL 15 via SQLAlchemy 2.0 ORM; schema managed by Alembic (`alembic.ini`, `alembic/versions/`). Tests use SQLite.
 - **Cache / broker**: Redis 7 — Celery broker and result backend (`CELERY_BROKER_URL`, `CELERY_RESULT_BACKEND`), app caching (`REDIS_URL`).
 - **External integrations**: Uniswap V2/V3 via web3.py (Ethereum, SKALE Europa, Beam); CoinGecko market data; Twitter via tweepy (optional, `ENABLE_TWITTER`); LLM providers — Anthropic, OpenAI, Google Gemini, Venice AI (`config.LLM_PROVIDERS`).
@@ -196,7 +196,7 @@ Swagger UI is only mounted when `DEBUG=true` (`/docs`, `/redoc`).
 
 ### All Changes
 
-- [ ] `pytest` passes (suite is green: 99 pass / 3 live-API skips); no new failures
+- [ ] `pytest` passes (suite is green: 105 pass / 3 live-API skips); no new failures
 - [ ] `flake8` introduces no new warnings; `black --check` clean on touched files
 - [ ] No unrelated changes included; no `.backup` files added
 - [ ] Commit messages follow conventional format: `type(scope): description`
