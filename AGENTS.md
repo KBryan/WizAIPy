@@ -192,7 +192,7 @@ Swagger UI is only mounted when `DEBUG=true` (`/docs`, `/redoc`).
 
 ### All Changes
 
-- [ ] `pytest` passes for tests that were green in `.agent/baseline.md` (58 pass); no new failures
+- [ ] `pytest` passes for tests that were green in `.agent/baseline.md` (61 pass); no new failures
 - [ ] `flake8` introduces no new warnings; `black --check` clean on touched files
 - [ ] No unrelated changes included; no `.backup` files added
 - [ ] Commit messages follow conventional format: `type(scope): description`
@@ -268,7 +268,7 @@ Full template: `env.example`. Required (no default in `config.Settings`):
 
 ### Known Issues
 
-- **Red test baseline** (2026-09-14): 12 failed / 56 passed / 3 skipped, coverage 40%. `tests/unit/test_api.py` is green. Remaining: (a) `tests/integration/test_integrations.py` Uniswap/Twitter/CoinGecko tests hit real clients or mock the wrong target (9 tests; the CoinGecko ones call the live API and can sleep 60s on a real 429); (b) 3 momentum-strategy assertions fail on logic. Details in `.agent/baseline.md`.
+- **Red test baseline** (2026-09-14): 9 failed / 61 passed / 3 skipped, coverage ~40%. All unit tests (`tests/unit/`) are green. Remaining failures are all in `tests/integration/test_integrations.py`: Uniswap (5) and Twitter (3) tests hit real clients or mock the wrong target, plus one CoinGecko error-handling test; the CoinGecko tests call the live API and can sleep 60s on a real 429. Details in `.agent/baseline.md`.
 - `web3==6.12.0` requires the `setuptools<81` / `eth-typing<5` pins in `requirements.txt`; upgrading web3 to 7.x would remove the need.
 - Lint/format/types are far from clean: flake8 756 findings, black would reformat 25/35 files, mypy 111 errors in 16 files.
 - Tracked artifacts that should not be: `*.backup*` files, `celerybeat-schedule`.
