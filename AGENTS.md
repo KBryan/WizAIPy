@@ -32,6 +32,7 @@
 | `core/nlp/` | module | Multi-provider LLM client for prompt → trade parsing | `core/nlp/llm_client.py` |
 | `core/strategies/` | module | Strategy framework (`BaseStrategy`, registry) + `momentum` | `core/strategies/base.py` |
 | `core/tokens.py` | registry | **Single source of truth** for token addresses + decimals per network; EIP-55 validated at import | `core/tokens.py` |
+| `core/contracts.py` | registry | **Single source of truth** for Uniswap router/factory addresses per network + version; shared `checksummed()` validator | `core/contracts.py` |
 | `core/celery_app.py`, `core/tasks.py` | worker | Celery app + background tasks (price feeds, strategy ticks) | `core/celery_app.py` |
 | `integrations/` | module | External adapters: CoinGecko, Twitter (tweepy), Uniswap (web3) | `integrations/uniswap.py` |
 | `config.py` | config | Pydantic `Settings` (env-driven) + network/LLM/exchange constants | `config.py` |
@@ -153,7 +154,7 @@ Swagger UI is only mounted when `DEBUG=true` (`/docs`, `/redoc`).
 - **Error handling**: integration modules raise domain exceptions (e.g. `integrations.uniswap.UniswapError`); routers translate to `HTTPException` with user-readable `detail`. Global exception handler in `api/main.py`.
 - **Logging**: stdlib `logging` — `logger = logging.getLogger(__name__)` per module; `logging.basicConfig` in `api/main.py`.
 - **Config**: never read `os.environ` directly — add a field to `config.Settings` and call `get_settings()`.
-- **Tokens**: never hard-code a contract address or decimals — resolve via `core.tokens` (`get_token`, `get_token_address`, `to_base_units`). New tokens go in `TOKENS[network]`; the registry checksums them at import.
+- **Addresses**: never hard-code a contract address or decimals. Tokens resolve via `core.tokens` (`get_token`, `get_token_address`, `to_base_units`); protocol contracts via `core.contracts` (`get_uniswap`). New entries go in `TOKENS[network]` / `UNISWAP[network]`; both registries EIP-55-checksum every address at import.
 - **Async**: routers and integration clients are `async`; use `httpx`/`aiohttp`; tests use `pytest-asyncio`.
 - **Strategies**: subclass `core.strategies.base.BaseStrategy`, return `TradingSignal`s, register in the strategy registry.
 - **Testing**: arrange-act-assert with `unittest.mock`; fixtures in `tests/conftest.py`. Patch names **where they are used** (e.g. `api.routers.auth.verify_nft_ownership`), not where defined. Modules that call `get_settings()` at import (`integrations/twitter.py`, `integrations/uniswap.py`, `api/deps.py`) must be patched at `<module>.settings`. To fake a Web3 connection use `patch('integrations.uniswap.Web3', wraps=Web3)` so `is_address`/`to_checksum_address` stay real. Awaited aiohttp methods (`response.json()`, `response.text()`) need `AsyncMock`. Anything consumed via `Depends(...)` (`get_current_user`, `trade_rate_limiter`, `get_redis_client`) cannot be patched at all — override it with `app.dependency_overrides`; see the `authenticated_user` / `trade_deps` fixtures in `tests/unit/test_api.py`.
@@ -194,7 +195,7 @@ Swagger UI is only mounted when `DEBUG=true` (`/docs`, `/redoc`).
 
 ### All Changes
 
-- [ ] `pytest` passes (suite is green: 79 pass / 3 live-API skips); no new failures
+- [ ] `pytest` passes (suite is green: 81 pass / 3 live-API skips); no new failures
 - [ ] `flake8` introduces no new warnings; `black --check` clean on touched files
 - [ ] No unrelated changes included; no `.backup` files added
 - [ ] Commit messages follow conventional format: `type(scope): description`
@@ -271,7 +272,7 @@ Full template: `env.example`. Required (no default in `config.Settings`):
 ### Known Issues
 
 - **Test suite is green** (2026-09-14): 70 passed / 3 skipped, coverage 43%. The 3 skips are `TestCoinGeckoIntegration` tests that call the live CoinGecko API and skip when unreachable (they can also sleep 60s on a real 429). History in `.agent/baseline.md`.
-- Token addresses/decimals live only in `core/tokens.py` (consolidated 2026-09-14 after three divergent copies produced placeholder addresses). Only `ethereum` has a registry; resolving a token on `skale`/`beam` raises `UnknownTokenError` rather than silently using mainnet addresses — add a per-network table there before trading on those chains. Uniswap router/factory addresses are still duplicated between `integrations/uniswap.py` and `core/tasks.py`.
+- Token addresses/decimals live only in `core/tokens.py` (consolidated 2026-09-14 after three divergent copies produced placeholder addresses). Only `ethereum` has a registry; resolving a token on `skale`/`beam` raises `UnknownTokenError` rather than silently using mainnet addresses — add a per-network table there before trading on those chains. Uniswap router/factory addresses live only in `core/contracts.py` (`get_uniswap(version, network)`).
 - `web3==6.12.0` requires the `setuptools<81` / `eth-typing<5` pins in `requirements.txt`; upgrading web3 to 7.x would remove the need.
 - Lint/format/types are far from clean: flake8 756 findings, black would reformat 25/35 files, mypy 111 errors in 16 files.
 - Tracked artifacts that should not be: `*.backup*` files, `celerybeat-schedule`.

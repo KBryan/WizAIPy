@@ -8,6 +8,7 @@ from datetime import datetime, timedelta
 import aiohttp
 from web3 import Web3
 
+from core.contracts import get_uniswap
 from integrations.coingecko import CoinGeckoClient, CoinGeckoError
 from integrations.uniswap import UniswapV2Adapter, UniswapV3Adapter, create_uniswap_adapter
 from integrations.twitter import TwitterClient, TwitterError
@@ -160,10 +161,13 @@ class TestUniswapIntegration:
         # Test V2 adapter creation
         adapter_v2 = create_uniswap_adapter("v2", "ethereum")
         assert isinstance(adapter_v2, UniswapV2Adapter)
+        assert adapter_v2.router_address == get_uniswap("v2").router
         
         # Test V3 adapter creation
         adapter_v3 = create_uniswap_adapter("v3", "ethereum")
         assert isinstance(adapter_v3, UniswapV3Adapter)
+        assert adapter_v3.router_address == get_uniswap("v3").router
+        assert adapter_v3.router_address != adapter_v2.router_address
         
         # Test invalid version
         with pytest.raises(ValueError):

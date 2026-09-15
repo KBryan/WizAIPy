@@ -16,6 +16,7 @@ from eth_account import Account
 from config import get_settings, SUPPORTED_NETWORKS
 from core.execution.engine import ExchangeAdapter, TradeQuote, ExecutionError
 from core.tokens import token_addresses, UnknownTokenError
+from core.contracts import get_uniswap, UnknownContractError
 
 logger = logging.getLogger(__name__)
 settings = get_settings()
@@ -54,9 +55,8 @@ class UniswapV2Adapter(ExchangeAdapter):
     Uniswap V2 adapter for token swaps.
     """
     
-    # Uniswap V2 contract addresses (Ethereum mainnet)
-    ROUTER_ADDRESS = "0x7a250d5630B4cF539739dF2C5dAcb4c659F2488D"
-    FACTORY_ADDRESS = "0x5C69bEe701ef814a2B6a3EDD4B1652CB9cc5aA6f"
+    # Which Uniswap deployment to resolve from core.contracts for self.network
+    UNISWAP_VERSION = "v2"
     
     # Uniswap V2 Router ABI (simplified)
     ROUTER_ABI = [
@@ -99,14 +99,18 @@ class UniswapV2Adapter(ExchangeAdapter):
     
     def __init__(self, network: str = "ethereum"):
         super().__init__(network)
+        
+        # Contract and token addresses for this network, from the shared registries
+        try:
+            deployment = get_uniswap(self.UNISWAP_VERSION, network)
+            self.token_addresses = token_addresses(network)
+        except (UnknownContractError, UnknownTokenError) as e:
+            raise UniswapError(str(e))
+        self.router_address = deployment.router
+        self.factory_address = deployment.factory
+        
         self.w3 = self._get_web3_connection()
         self.router_contract = self._get_router_contract()
-        
-        # Symbol -> address for this network, from the shared registry
-        try:
-            self.token_addresses = token_addresses(network)
-        except UnknownTokenError as e:
-            raise UniswapError(str(e))
     
     def _get_web3_connection(self) -> Web3:
         """Get Web3 connection for the network."""
@@ -130,7 +134,7 @@ class UniswapV2Adapter(ExchangeAdapter):
     def _get_router_contract(self) -> Contract:
         """Get Uniswap V2 router contract."""
         return self.w3.eth.contract(
-            address=Web3.to_checksum_address(self.ROUTER_ADDRESS),
+            address=self.router_address,
             abi=self.ROUTER_ABI
         )
     
@@ -394,13 +398,10 @@ class UniswapV3Adapter(UniswapV2Adapter):
     Extends V2 adapter with V3-specific functionality.
     """
     
-    # Uniswap V3 contract addresses (Ethereum mainnet)
-    ROUTER_ADDRESS = "0xE592427A0AEce92De3Edee1F18E0157C05861564"
-    FACTORY_ADDRESS = "0x1F98431c8aD98523631AE4a59f267346ea31F984"
+    UNISWAP_VERSION = "v3"
     
     def __init__(self, network: str = "ethereum"):
         super().__init__(network)
-        # Override with V3 router
         # TODO: Implement V3-specific contract interactions
     
     async def get_quote(self, token_in: str, token_out: str, amount_in: float) -> TradeQuote:

@@ -15,7 +15,7 @@ from dataclasses import dataclass
 from decimal import Decimal
 from typing import Dict, Union
 
-from eth_utils import is_checksum_address
+from core.contracts import checksummed
 
 # Sentinel address used for the chain's native asset (ETH on Ethereum).
 NATIVE_TOKEN_ADDRESS = "0x0000000000000000000000000000000000000000"
@@ -37,8 +37,8 @@ class TokenInfo:
 
 
 def _token(symbol: str, address: str, decimals: int) -> TokenInfo:
-    if address != NATIVE_TOKEN_ADDRESS and not is_checksum_address(address):
-        raise ValueError(f"{symbol}: {address!r} is not a checksummed address")
+    if address != NATIVE_TOKEN_ADDRESS:
+        checksummed(symbol, address)
     return TokenInfo(symbol, address, decimals)
 
 

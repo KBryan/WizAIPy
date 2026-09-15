@@ -12,12 +12,13 @@ import logging
 from typing import Dict, Any
 from config import get_settings
 from core.tokens import NATIVE_TOKEN_ADDRESS, get_token_address, is_supported_token, to_base_units
+from core.contracts import get_uniswap
 import requests
 
 logger = logging.getLogger(__name__)
 
-# Uniswap V3 Router address on Ethereum mainnet
-UNISWAP_V3_ROUTER = "0xE592427A0AEce92De3Edee1F18E0157C05861564"
+# Uniswap V3 SwapRouter on Ethereum mainnet, from the shared contract registry
+UNISWAP_V3_ROUTER = get_uniswap("v3", "ethereum").router
 
 
 # Simplified Uniswap V3 Router ABI (just the exactInputSingle function)
@@ -534,10 +535,6 @@ def execute_trade(trade_data: Dict[str, Any]):
             # Verify token address is valid
             if not token_in_address or token_in_address == "":
                 raise Exception(f"Invalid token address for {token_in}")
-
-            # Verify we have the router address
-            if not UNISWAP_V3_ROUTER or UNISWAP_V3_ROUTER == "":
-                raise Exception("UNISWAP_V3_ROUTER address not configured")
 
             try:
                 approval_success = check_and_approve_token(

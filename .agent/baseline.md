@@ -9,9 +9,9 @@
 
 Command: `.venv/bin/python -m pytest -p no:cacheprovider`
 
-**0 failed, 79 passed, 3 skipped, 2 warnings** — exit 0 (~8s; up to ~70s when the live CoinGecko API returns 429) — coverage 40% (`--cov-fail-under=80` removed from `pytest.ini`; it is now reported, not enforced)
+**0 failed, 81 passed, 3 skipped, 2 warnings** — exit 0 (~8s; up to ~70s when the live CoinGecko API returns 429) — coverage 40% (`--cov-fail-under=80` removed from `pytest.ini`; it is now reported, not enforced)
 
-History: 21/33/17 (initial) → 26/42/3 (after `[pytest]` header fix) → 12/56/3 (after `tests/unit/test_api.py` fix) → 12/58/3 (RateLimiter fix + 2 tests) → 9/61/3 (momentum strategy fix) → 0/70/3 (integration test fix) → 0/71/3 (token address fix + guard test) → 0/79/3 (token registry consolidation + tests). The 17 "skips" were async tests that pytest-asyncio strict mode refused to run; with `asyncio_mode = auto` now active they execute — 9 pass, 5 fail (listed below as NEW). No previously-passing test regressed.
+History: 21/33/17 (initial) → 26/42/3 (after `[pytest]` header fix) → 12/56/3 (after `tests/unit/test_api.py` fix) → 12/58/3 (RateLimiter fix + 2 tests) → 9/61/3 (momentum strategy fix) → 0/70/3 (integration test fix) → 0/71/3 (token address fix + guard test) → 0/79/3 (token registry consolidation + tests) → 0/81/3 (contract registry consolidation + tests). The 17 "skips" were async tests that pytest-asyncio strict mode refused to run; with `asyncio_mode = auto` now active they execute — 9 pass, 5 fail (listed below as NEW). No previously-passing test regressed.
 
 Install-time blockers hit before the suite would collect (now fixed in `requirements.txt`):
 - `ModuleNotFoundError: No module named 'pkg_resources'` — `web3/__init__.py` imports `pkg_resources`; uv venvs ship no setuptools and setuptools ≥81 removed it → pin `setuptools<81`.
