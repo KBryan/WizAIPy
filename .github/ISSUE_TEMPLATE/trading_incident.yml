@@ -1,0 +1,93 @@
+name: Trading incident
+description: A live or dry-run trade did the wrong thing — wrong amount, token, price, reverted, or should not have happened
+labels: [bug, trading]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Fill this in as soon as possible after the event, while logs are still available.
+        **Never paste private keys, `.env` contents, or RPC URLs that embed an API key.** Wallet addresses and tx hashes are fine — they are already public on-chain.
+
+        If you believe the bot is still trading incorrectly, hit `POST /admin/emergency-stop` first.
+
+  - type: dropdown
+    id: mode
+    attributes:
+      label: Mode
+      options:
+        - REAL_DATA_MODE=true — real funds moved
+        - REAL_DATA_MODE=true — transaction reverted, only gas lost
+        - Dry run / simulation
+    validations:
+      required: true
+
+  - type: dropdown
+    id: network
+    attributes:
+      label: Network
+      options: [ethereum, skale, beam, other]
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected_vs_actual
+    attributes:
+      label: Intended trade vs. what happened
+      description: Token in/out, amount, exchange, slippage you intended — and what the chain shows.
+      placeholder: |
+        Intended: swap 0.5 ETH -> USDC on uniswap_v3, 0.5% slippage
+        Actual:   tx reverted; amountOutMin was 1.6e21 (looks like USDC scaled at 18 decimals)
+    validations:
+      required: true
+
+  - type: textarea
+    id: tx
+    attributes:
+      label: Transaction hash(es) and wallet address
+      description: One per line. Include approval transactions too.
+      render: text
+    validations:
+      required: true
+
+  - type: dropdown
+    id: origin
+    attributes:
+      label: How was the trade triggered
+      options:
+        - POST /trade/prompt (natural language)
+        - POST /trade/execute (direct)
+        - Automated strategy (Celery task)
+        - Execution engine (trade_engine.execute_signal)
+        - Not sure
+    validations:
+      required: true
+
+  - type: input
+    id: trade_id
+    attributes:
+      label: Trade ID / Celery task ID
+      description: From the API response or `GET /trade/status/{trade_id}`
+
+  - type: input
+    id: version
+    attributes:
+      label: Commit or version
+    validations:
+      required: true
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs
+      description: API and worker logs around the trade (`core.tasks` lines especially). Redact anything secret.
+      render: text
+    validations:
+      required: true
+
+  - type: checkboxes
+    id: containment
+    attributes:
+      label: Containment
+      options:
+        - label: Emergency stop has been triggered (or trading is otherwise halted)
+        - label: The wallet's remaining token approvals to the router have been checked

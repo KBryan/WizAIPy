@@ -45,6 +45,7 @@
 | `.github/workflows/ci.yml` | ci | GitHub Actions: pytest on 3.11 + 3.12 (`-m "not external"`), flake8 error gate; full flake8/black/mypy informational | — |
 | `.pre-commit-config.yaml` | hooks | black, flake8 error gate, whitespace/EOF fixers, YAML check, private-key and debug-statement detection — on staged files only | — |
 | `.github/PULL_REQUEST_TEMPLATE.md` | template | PR body: summary, risk-area checkboxes (mirror the Escalation Triggers), behaviour changes, test plan, checklist | — |
+| `.github/ISSUE_TEMPLATE/` | templates | Issue forms: bug report, feature request, **trading incident** (tx hashes, mode, containment); security issues redirected to private advisories | — |
 
 ---
 
@@ -232,7 +233,8 @@ Swagger UI is only mounted when `DEBUG=true` (`/docs`, `/redoc`).
 
 ### Channels
 
-- **Standard**: Open a GitHub issue or comment on the PR
+- **Standard**: Open a GitHub issue (use the *Trading incident* form for any wrong/reverted trade) or comment on the PR
+- **Security / leaked key**: private advisory at https://github.com/KBryan/WizAIPy/security/advisories/new — never a public issue
 - **Urgent**: Tag the repository maintainer (`kwame.eth`) in the PR
 
 ### Escalation Triggers
