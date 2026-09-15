@@ -104,8 +104,8 @@ class UniswapV2Adapter(ExchangeAdapter):
         # Common token addresses (Ethereum mainnet)
         self.token_addresses = {
             "ETH": "0x0000000000000000000000000000000000000000",  # Native ETH
-            "WETH": "0xC02aaA39b223FE8C0625C6E8C11028C0C5B9B2dB",
-            "USDC": "0xA0b86a33E6441E6C7C7C8C7C8C7C8C7C8C7C8C7C",
+            "WETH": "0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2",
+            "USDC": "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48",
             "USDT": "0xdAC17F958D2ee523a2206206994597C13D831ec7",
             "DAI": "0x6B175474E89094C44Da98b954EedeAC495271d0F",
             "WBTC": "0x2260FAC5E5542a773Aa44fBCfeDf7C193bc2C599"

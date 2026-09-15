@@ -379,7 +379,7 @@ async def get_portfolio(
                     },
                     {
                         "symbol": "USDC",
-                        "address": "0xA0b86a33E6441E6C7C7C8C7C8C7C8C7C8C7C8C7C",
+                        "address": "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48",
                         "balance": 1000.0,
                         "value_usd": 1000.0,
                         "price_usd": 1.0
@@ -411,7 +411,7 @@ async def get_portfolio(
                     },
                     {
                         "symbol": "USDC",
-                        "address": "0xA0b86a33E6441E6C7C7C8C7C8C7C8C7C8C7C8C7C",
+                        "address": "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48",
                         "balance": 1000.0,
                         "value_usd": 1000.0,
                         "price_usd": 1.0
@@ -441,7 +441,7 @@ async def get_portfolio(
         # Token contracts (mainnet addresses)
         token_contracts = {
             "USDC": {
-                "address": "0xA0b86a33E6441E6C7C7Cc6Cc9A3dAe3A1e09e0C2",
+                "address": "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48",
                 "decimals": 6
             },
             "USDT": {

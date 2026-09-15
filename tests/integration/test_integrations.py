@@ -210,6 +210,26 @@ class TestUniswapIntegration:
     
     @pytest.mark.unit
     @patch('integrations.uniswap.Web3', wraps=Web3)
+    def test_token_addresses_are_real_mainnet_contracts(self, mock_web3):
+        """Every hard-coded token address must be a checksum-valid mainnet address.
+
+        Placeholder addresses fail EIP-55 validation, which is how the bogus
+        WETH/USDC entries that used to live here were caught.
+        """
+        mock_w3_instance = Mock()
+        mock_w3_instance.is_connected.return_value = True
+        mock_web3.return_value = mock_w3_instance
+        
+        adapter = UniswapV2Adapter("ethereum")
+        for symbol, address in adapter.token_addresses.items():
+            assert Web3.is_address(address), f"{symbol} address fails checksum: {address}"
+        
+        # Canonical mainnet contracts — every swap path routes through WETH
+        assert adapter.token_addresses["WETH"] == "0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2"
+        assert adapter.token_addresses["USDC"] == "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48"
+    
+    @pytest.mark.unit
+    @patch('integrations.uniswap.Web3', wraps=Web3)
     def test_swap_path_building(self, mock_web3):
         """Test swap path building logic."""
         mock_w3_instance = Mock()
