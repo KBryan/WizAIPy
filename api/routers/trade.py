@@ -4,7 +4,7 @@ Handles prompt-to-trade conversion and trade execution.
 """
 import json
 
-from fastapi import APIRouter, Depends, HTTPException, status, BackgroundTasks
+from fastapi import APIRouter, Depends, HTTPException, Query, status, BackgroundTasks
 from pydantic import BaseModel, Field
 from typing import Optional, Dict, Any, List
 from enum import Enum
@@ -16,7 +16,8 @@ import uuid
 import redis
 
 from config import get_settings
-from api.deps import get_current_user, trade_rate_limiter, get_redis_client
+from api.deps import get_current_user, trade_rate_limiter, api_rate_limiter, get_redis_client
+from core.execution.engine import trade_engine
 from core.tokens import get_token, get_token_address, NATIVE_TOKEN_ADDRESS
 from core.tasks import execute_trade_task
 
@@ -81,6 +82,23 @@ class TradeResponse(BaseModel):
     message: str
     transaction_hash: Optional[str] = None
     error: Optional[str] = None
+
+
+class QuoteResponse(BaseModel):
+    """Response model for a swap quote from the execution engine."""
+    exchange: str
+    network: str
+    token_in: str
+    token_out: str
+    amount_in: float
+    amount_out: float
+    price: float = Field(..., description="amount_out / amount_in")
+    fees: float = Field(..., description="Exchange fee, in units of token_in")
+    slippage: float = Field(..., description="Adapter's slippage estimate, as a fraction")
+    gas_estimate: int
+    route: List[str] = Field(default_factory=list, description="Token addresses along the swap path")
+    valid_until: datetime
+    exchanges_checked: List[str] = Field(..., description="Exchanges the quote was compared across")
 
 
 class PortfolioResponse(BaseModel):
@@ -264,6 +282,73 @@ async def execute_direct_trade(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=f"Trade execution failed: {str(e)}"
         )
+
+
+@router.get("/quote", response_model=QuoteResponse)
+async def get_quote(
+        token_in: str = Query(..., description="Input token symbol or address"),
+        token_out: str = Query(..., description="Output token symbol or address"),
+        amount_in: float = Query(..., gt=0, description="Input amount in token_in units"),
+        exchange: Optional[str] = Query(None, description="Pin a single exchange, e.g. uniswap_v3"),
+        network: str = Query("ethereum", description="Blockchain network"),
+        current_user: Dict[str, Any] = Depends(get_current_user),
+        _rate_limit: None = Depends(api_rate_limiter)
+):
+    """
+    Get the best available swap quote from the execution engine.
+
+    Compares every exchange adapter registered for the network (net of fees)
+    unless `exchange` pins one. Read-only: nothing is executed.
+    """
+    if token_in.upper() == token_out.upper():
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="token_in and token_out must differ"
+        )
+
+    available = sorted(
+        name for name, adapter in trade_engine.adapters.items() if adapter.network == network
+    )
+    if not available:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail=f"No exchange adapters available on {network} (is the RPC node reachable?)"
+        )
+
+    if exchange is not None:
+        if exchange not in available:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Unknown exchange {exchange!r} on {network}; available: {available}"
+            )
+        exchanges = [exchange]
+    else:
+        exchanges = available
+
+    logger.info(f"Quote request from {current_user['wallet_address']}: {amount_in} {token_in} -> {token_out} on {exchanges}")
+
+    quote = await trade_engine.get_best_quote(token_in, token_out, amount_in, exchanges)
+    if quote is None:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail=f"No exchange could quote {token_in} -> {token_out} on {exchanges}"
+        )
+
+    return QuoteResponse(
+        exchange=quote.exchange,
+        network=network,
+        token_in=quote.token_in,
+        token_out=quote.token_out,
+        amount_in=quote.amount_in,
+        amount_out=quote.amount_out,
+        price=quote.price,
+        fees=quote.fees,
+        slippage=quote.slippage,
+        gas_estimate=quote.gas_estimate,
+        route=quote.route or [],
+        valid_until=quote.valid_until,
+        exchanges_checked=exchanges,
+    )
 
 
 @router.get("/status/{trade_id}")

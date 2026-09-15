@@ -284,6 +284,61 @@ Content-Type: application/json
 }
 ```
 
+#### GET /trade/quote
+
+Get the best available swap quote from the execution engine. Read-only — nothing is executed. Compares every exchange adapter registered for the network, net of fees, unless `exchange` pins one.
+
+**Headers:**
+```http
+Authorization: Bearer <jwt_token>
+```
+
+**Query Parameters:**
+
+| Parameter | Type | Required | Description |
+|---|---|---|---|
+| `token_in` | string | Yes | Input token symbol or address |
+| `token_out` | string | Yes | Output token symbol or address |
+| `amount_in` | number | Yes | Input amount in `token_in` units (> 0) |
+| `exchange` | string | No | Pin a single exchange, e.g. `uniswap_v3` |
+| `network` | string | No | Blockchain network (default `ethereum`) |
+
+**Example:**
+```bash
+curl "http://localhost:8000/trade/quote?token_in=ETH&token_out=USDC&amount_in=1.0" \
+  -H "Authorization: Bearer <jwt_token>"
+```
+
+**Response:**
+```json
+{
+  "exchange": "uniswap_v3",
+  "network": "ethereum",
+  "token_in": "ETH",
+  "token_out": "USDC",
+  "amount_in": 1.0,
+  "amount_out": 1602.35,
+  "price": 1602.35,
+  "fees": 0.0005,
+  "slippage": 0.01,
+  "gas_estimate": 180000,
+  "route": [
+    "0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2",
+    "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48"
+  ],
+  "valid_until": "2024-01-15T10:35:00Z",
+  "exchanges_checked": ["uniswap_v2", "uniswap_v3"]
+}
+```
+
+**Errors:**
+
+| Status | When |
+|---|---|
+| 400 | `token_in` equals `token_out`, or `exchange` is not registered on the network |
+| 422 | `amount_in` is not > 0 or a required parameter is missing |
+| 503 | No exchange adapters are registered for the network (RPC unreachable), or none could produce a quote |
+
 #### GET /trade/status/{trade_id}
 
 Get the status of a specific trade.

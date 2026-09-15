@@ -9,7 +9,8 @@ import json
 
 from fastapi.testclient import TestClient
 from api.main import app
-from api.deps import get_current_user, get_optional_user, trade_rate_limiter, get_redis_client
+from api.deps import get_current_user, get_optional_user, trade_rate_limiter, api_rate_limiter, get_redis_client
+from core.execution.engine import trade_engine, TradeQuote
 
 TEST_WALLET = "0x1234567890abcdef1234567890abcdef12345678"
 
@@ -339,6 +340,119 @@ class TestTradeEndpoints:
             assert "total" in data
             assert "limit" in data
             assert "offset" in data
+
+
+def _fake_adapter(exchange: str, amount_out: float, fees: float, network: str = "ethereum"):
+    """An ExchangeAdapter stand-in whose get_quote returns a fixed TradeQuote."""
+    adapter = Mock()
+    adapter.network = network
+    adapter.get_quote = AsyncMock(return_value=TradeQuote(
+        exchange=exchange, token_in="ETH", token_out="USDC", amount_in=1.0,
+        amount_out=amount_out, price=amount_out, gas_estimate=150000, slippage=0.01,
+        fees=fees, valid_until=datetime(2030, 1, 1), route=["0xWETH", "0xUSDC"],
+    ))
+    return adapter
+
+
+class TestQuoteEndpoint:
+    """Test cases for GET /trade/quote."""
+
+    @pytest.fixture(autouse=True)
+    def no_startup_registration(self):
+        """Keep the lifespan from registering real adapters on top of the fakes."""
+        with patch("api.main.register_default_adapters"):
+            yield
+
+    @pytest.fixture
+    def engine_adapters(self):
+        """Swap two fake adapters onto the global trade engine for the test."""
+        adapters = {
+            "uniswap_v2": _fake_adapter("uniswap_v2", amount_out=1600.0, fees=0.003),
+            "uniswap_v3": _fake_adapter("uniswap_v3", amount_out=1602.0, fees=0.0005),
+        }
+        with patch.object(trade_engine, "adapters", adapters):
+            yield adapters
+
+    @pytest.fixture
+    def no_rate_limit(self):
+        undo = _override(api_rate_limiter, None)
+        yield
+        undo()
+
+    def test_returns_best_quote_across_exchanges(self, engine_adapters, no_rate_limit, authenticated_user):
+        with TestClient(app) as client:
+            response = client.get("/trade/quote", params={
+                "token_in": "ETH", "token_out": "USDC", "amount_in": 1.0
+            }, headers={"Authorization": "Bearer test_token"})
+
+        assert response.status_code == 200, response.text
+        data = response.json()
+        assert data["exchange"] == "uniswap_v3"  # higher net output
+        assert data["amount_out"] == 1602.0
+        assert data["fees"] == 0.0005
+        assert data["route"] == ["0xWETH", "0xUSDC"]
+        assert data["exchanges_checked"] == ["uniswap_v2", "uniswap_v3"]
+        for adapter in engine_adapters.values():
+            adapter.get_quote.assert_awaited_once_with("ETH", "USDC", 1.0)
+
+    def test_pinned_exchange(self, engine_adapters, no_rate_limit, authenticated_user):
+        with TestClient(app) as client:
+            response = client.get("/trade/quote", params={
+                "token_in": "ETH", "token_out": "USDC", "amount_in": 1.0, "exchange": "uniswap_v2"
+            }, headers={"Authorization": "Bearer test_token"})
+
+        assert response.status_code == 200
+        assert response.json()["exchange"] == "uniswap_v2"
+        assert response.json()["exchanges_checked"] == ["uniswap_v2"]
+        engine_adapters["uniswap_v3"].get_quote.assert_not_awaited()
+
+    def test_unknown_exchange_is_400(self, engine_adapters, no_rate_limit, authenticated_user):
+        with TestClient(app) as client:
+            response = client.get("/trade/quote", params={
+                "token_in": "ETH", "token_out": "USDC", "amount_in": 1.0, "exchange": "sushiswap"
+            }, headers={"Authorization": "Bearer test_token"})
+
+        assert response.status_code == 400
+        assert "uniswap_v2" in response.json()["detail"]
+
+    def test_same_token_is_400(self, engine_adapters, no_rate_limit, authenticated_user):
+        with TestClient(app) as client:
+            response = client.get("/trade/quote", params={
+                "token_in": "ETH", "token_out": "eth", "amount_in": 1.0
+            }, headers={"Authorization": "Bearer test_token"})
+        assert response.status_code == 400
+
+    def test_non_positive_amount_is_422(self, engine_adapters, no_rate_limit, authenticated_user):
+        with TestClient(app) as client:
+            response = client.get("/trade/quote", params={
+                "token_in": "ETH", "token_out": "USDC", "amount_in": 0
+            }, headers={"Authorization": "Bearer test_token"})
+        assert response.status_code == 422
+
+    def test_no_adapters_is_503(self, no_rate_limit, authenticated_user):
+        with patch.object(trade_engine, "adapters", {}):
+            with TestClient(app) as client:
+                response = client.get("/trade/quote", params={
+                    "token_in": "ETH", "token_out": "USDC", "amount_in": 1.0
+                }, headers={"Authorization": "Bearer test_token"})
+        assert response.status_code == 503
+
+    def test_all_adapters_failing_is_503(self, engine_adapters, no_rate_limit, authenticated_user):
+        for adapter in engine_adapters.values():
+            adapter.get_quote.side_effect = Exception("rpc down")
+        with TestClient(app) as client:
+            response = client.get("/trade/quote", params={
+                "token_in": "ETH", "token_out": "USDC", "amount_in": 1.0
+            }, headers={"Authorization": "Bearer test_token"})
+        assert response.status_code == 503
+        assert "could quote" in response.json()["detail"]
+
+    def test_requires_auth(self, engine_adapters, no_rate_limit):
+        with TestClient(app) as client:
+            response = client.get("/trade/quote", params={
+                "token_in": "ETH", "token_out": "USDC", "amount_in": 1.0
+            })
+        assert response.status_code in (401, 403)
 
 
 class TestAdminEndpoints:
