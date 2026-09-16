@@ -1,0 +1,5 @@
+blank_issues_enabled: true
+contact_links:
+  - name: Security vulnerability or leaked key
+    url: https://github.com/KBryan/WizAIPy/security/advisories/new
+    about: Anything involving private keys, the NFT gate, or a way to make the bot trade wrongly. Report privately — do not open a public issue.

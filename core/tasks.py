@@ -11,21 +11,15 @@ from core.celery_app import celery_app
 import logging
 from typing import Dict, Any
 from config import get_settings
+from core.tokens import NATIVE_TOKEN_ADDRESS, get_token_address, is_supported_token, to_base_units
+from core.contracts import get_uniswap
 import requests
 
 logger = logging.getLogger(__name__)
 
-# Uniswap V3 Router address on Ethereum mainnet
-UNISWAP_V3_ROUTER = "0xE592427A0AEce92De3Edee1F18E0157C05861564"
+# Uniswap V3 SwapRouter on Ethereum mainnet, from the shared contract registry
+UNISWAP_V3_ROUTER = get_uniswap("v3", "ethereum").router
 
-# Token addresses on Ethereum mainnet (CORRECTED!)
-TOKEN_ADDRESSES = {
-    "ETH": "0x0000000000000000000000000000000000000000",  # Native ETH
-    "WETH": "0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2",
-    "USDC": "0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48",
-    "USDT": "0xdAC17F958D2ee523a2206206994597C13D831ec7",
-    "SKL": "0x00c83aecc790e8a4453e5dd3b0b4b3680501a7a7"
-}
 
 # Simplified Uniswap V3 Router ABI (just the exactInputSingle function)
 UNISWAP_V3_ROUTER_ABI = [
@@ -171,7 +165,7 @@ def check_and_approve_token(w3, token_address, spender_address, amount, wallet_a
     """
     try:
         # Skip approval for ETH (native token)
-        if token_address == "0x0000000000000000000000000000000000000000":
+        if token_address == NATIVE_TOKEN_ADDRESS:
             logger.info("✅ ETH trade - no approval needed")
             return True
 
@@ -495,7 +489,7 @@ def execute_trade(trade_data: Dict[str, Any]):
         if amount_in <= 0:
             raise Exception(f"Invalid amount: {amount_in}")
 
-        if token_in not in TOKEN_ADDRESSES or token_out not in TOKEN_ADDRESSES:
+        if not (is_supported_token(token_in) and is_supported_token(token_out)):
             raise Exception(f"Unsupported token pair: {token_in} -> {token_out}")
 
         # Calculate output amounts using LIVE PRICES! 🚀
@@ -517,25 +511,13 @@ def execute_trade(trade_data: Dict[str, Any]):
 
         logger.info(f"Trading from wallet: {wallet_address}")
 
-        # Convert amount to Wei
-        if token_in == "ETH":
-            amount_in_wei = w3.to_wei(amount_in, 'ether')
-        else:
-            # For ERC20 tokens, handle decimals appropriately
-            if token_in == "USDC":
-                amount_in_wei = int(amount_in * 10**6)  # USDC has 6 decimals
-            else:
-                amount_in_wei = int(amount_in * 10**18)  # Most tokens have 18 decimals
-
-        # Convert minimum output to appropriate decimals
-        if token_out == "USDC":
-            amount_out_minimum = int(amount_out_minimum_float * 10**6)  # USDC has 6 decimals
-        else:
-            amount_out_minimum = int(amount_out_minimum_float * 10**18)  # ETH/WETH have 18 decimals
+        # Convert amounts to base units using each token's registered decimals
+        amount_in_wei = to_base_units(amount_in, token_in)
+        amount_out_minimum = to_base_units(amount_out_minimum_float, token_out)
 
         # Get token addresses
-        token_in_address = TOKEN_ADDRESSES[token_in]
-        token_out_address = TOKEN_ADDRESSES[token_out]
+        token_in_address = get_token_address(token_in)
+        token_out_address = get_token_address(token_out)
 
         logger.info(f"Token addresses: {token_in_address} -> {token_out_address}")
         logger.info(f"Amount calculations: input={amount_in_wei}, min_out={amount_out_minimum}")
@@ -553,10 +535,6 @@ def execute_trade(trade_data: Dict[str, Any]):
             # Verify token address is valid
             if not token_in_address or token_in_address == "":
                 raise Exception(f"Invalid token address for {token_in}")
-
-            # Verify we have the router address
-            if not UNISWAP_V3_ROUTER or UNISWAP_V3_ROUTER == "":
-                raise Exception("UNISWAP_V3_ROUTER address not configured")
 
             try:
                 approval_success = check_and_approve_token(

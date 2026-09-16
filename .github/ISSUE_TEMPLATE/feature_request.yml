@@ -1,0 +1,52 @@
+name: Feature request
+description: A new capability or a change to existing behaviour
+labels: [enhancement]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem
+      description: What can't you do today, or what is awkward? Describe the situation, not the solution.
+    validations:
+      required: true
+
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed change
+      description: What you'd like to happen. API shape, config, or CLI sketch welcome.
+    validations:
+      required: true
+
+  - type: dropdown
+    id: area
+    attributes:
+      label: Area
+      options:
+        - New exchange / adapter
+        - New network or token (core/tokens.py, core/contracts.py)
+        - New strategy or strategy parameter
+        - API endpoint
+        - LLM / prompt parsing
+        - Auth / access control
+        - Observability / ops
+        - Docs / developer experience
+        - Other
+    validations:
+      required: true
+
+  - type: dropdown
+    id: risk
+    attributes:
+      label: Does this change how or when real funds move?
+      options:
+        - "No"
+        - "Yes — new trade path or changed trade parameters"
+        - "Not sure"
+    validations:
+      required: true
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered

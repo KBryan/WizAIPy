@@ -74,6 +74,7 @@ class CoinGeckoClient:
         self.api_key = api_key or settings.coingecko_api_key
         self.session: Optional[aiohttp.ClientSession] = None
         self.rate_limit_delay = 1.0  # Delay between requests to respect rate limits
+        self.max_retries = 3  # Max retries on HTTP 429 before giving up
         self.last_request_time = 0.0
         
         # Cache for coin IDs and symbols
@@ -112,7 +113,7 @@ class CoinGeckoClient:
         
         self.last_request_time = asyncio.get_event_loop().time()
     
-    async def _make_request(self, endpoint: str, params: Dict[str, Any] = None) -> Dict[str, Any]:
+    async def _make_request(self, endpoint: str, params: Dict[str, Any] = None, _attempt: int = 0) -> Dict[str, Any]:
         """
         Make HTTP request to CoinGecko API.
         
@@ -133,11 +134,13 @@ class CoinGeckoClient:
                 if response.status == 200:
                     return await response.json()
                 elif response.status == 429:
-                    # Rate limit exceeded
+                    # Rate limit exceeded — retry a bounded number of times
+                    if _attempt >= self.max_retries:
+                        raise CoinGeckoError(f"Rate limit exceeded after {self.max_retries} retries")
                     retry_after = int(response.headers.get("Retry-After", 60))
                     logger.warning(f"Rate limit exceeded, waiting {retry_after} seconds")
                     await asyncio.sleep(retry_after)
-                    return await self._make_request(endpoint, params)
+                    return await self._make_request(endpoint, params, _attempt + 1)
                 else:
                     error_text = await response.text()
                     raise CoinGeckoError(f"API request failed: {response.status} - {error_text}")

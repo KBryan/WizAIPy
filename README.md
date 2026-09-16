@@ -1,5 +1,7 @@
 # WizAIPy
 
+[![CI](https://github.com/KBryan/WizAIPy/actions/workflows/ci.yml/badge.svg)](https://github.com/KBryan/WizAIPy/actions/workflows/ci.yml)
+
 <img width="754" height="763" alt="wizaipi" src="https://github.com/user-attachments/assets/0ab049e8-6370-4048-8c7a-897c3e381871" />
 
 

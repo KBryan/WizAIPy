@@ -1,0 +1,34 @@
+# Install once: pip install pre-commit && pre-commit install
+# Hooks run only on the files in a commit, so existing style debt in untouched
+# files does not block you; black/whitespace fixes are applied to what you touch.
+# Tool versions match requirements.txt and .github/workflows/ci.yml; tool settings
+# come from pyproject.toml and .flake8.
+
+repos:
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v5.0.0
+    hooks:
+      - id: trailing-whitespace
+      - id: end-of-file-fixer
+      - id: check-yaml
+      - id: check-toml
+      - id: check-merge-conflict
+      - id: check-added-large-files
+        args: [--maxkb=500]
+      - id: detect-private-key          # trading wallet keys must never be committed
+      - id: debug-statements            # leftover breakpoint()/pdb
+
+  - repo: https://github.com/psf/black
+    rev: 23.11.0
+    hooks:
+      - id: black
+        # Reformats staged Python files in place; re-stage and commit again.
+
+  - repo: https://github.com/PyCQA/flake8
+    rev: 6.1.0
+    hooks:
+      - id: flake8
+        # Same hard gate as CI: syntax errors, undefined names, misuse of
+        # comparisons/asserts. Full style checking stays informational in CI
+        # until the existing debt is paid down.
+        args: ["--select=E9,F63,F7,F82", "--show-source"]

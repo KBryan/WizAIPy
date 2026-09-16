@@ -80,7 +80,9 @@ class MomentumStrategy(BaseStrategy):
             return None
         
         prices = self.price_history[symbol]
-        volumes = self.volume_history.get(symbol, [])
+        # _update_history has already appended the current bar; compare the current
+        # volume against the history *before* it, not against an average of itself.
+        volumes = self.volume_history.get(symbol, [])[:-1]
         
         # Calculate momentum indicators
         momentum_score = self._calculate_momentum_score(prices)
@@ -151,33 +153,30 @@ class MomentumStrategy(BaseStrategy):
     
     def _calculate_ma_crossover(self, prices: List[float]) -> int:
         """
-        Calculate moving average crossover signal.
+        Calculate moving average alignment signal.
+        
+        Reports whether the short MA currently sits above or below the long MA,
+        i.e. the state left behind by the most recent crossover. This is used as
+        a trend filter by _determine_signal_type, so it must stay set for as long
+        as the alignment holds rather than firing only on the bar of the cross.
         
         Args:
             prices: Historical prices
             
         Returns:
-            1 for bullish crossover, -1 for bearish crossover, 0 for no signal
+            1 if short MA is above long MA (bullish), -1 if below (bearish),
+            0 if equal or insufficient history
         """
         if len(prices) < self.long_ma_period:
             return 0
         
-        # Calculate short and long moving averages
         short_ma = np.mean(prices[-self.short_ma_period:])
         long_ma = np.mean(prices[-self.long_ma_period:])
         
-        # Previous moving averages for crossover detection
-        if len(prices) < self.long_ma_period + 1:
-            return 0
-        
-        prev_short_ma = np.mean(prices[-self.short_ma_period-1:-1])
-        prev_long_ma = np.mean(prices[-self.long_ma_period-1:-1])
-        
-        # Detect crossover
-        if prev_short_ma <= prev_long_ma and short_ma > long_ma:
-            return 1  # Bullish crossover
-        elif prev_short_ma >= prev_long_ma and short_ma < long_ma:
-            return -1  # Bearish crossover
+        if short_ma > long_ma:
+            return 1  # Bullish alignment
+        elif short_ma < long_ma:
+            return -1  # Bearish alignment
         
         return 0
     
@@ -195,10 +194,10 @@ class MomentumStrategy(BaseStrategy):
         if not volumes or current_volume < self.volume_threshold:
             return False
         
-        # Check if current volume is above average
+        # Check if current volume is at least 20% above average
         avg_volume = np.mean(volumes[-self.lookback_period:]) if len(volumes) >= self.lookback_period else np.mean(volumes)
         
-        return current_volume > avg_volume * 1.2  # 20% above average
+        return bool(current_volume >= avg_volume * 1.2)  # np.bool_ -> bool
     
     def _determine_signal_type(self, momentum_score: float, ma_signal: int, volume_confirmation: bool) -> SignalType:
         """

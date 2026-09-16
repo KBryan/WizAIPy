@@ -59,3 +59,28 @@ Thumbs.db
 
 # Heroku
 .heroku/
+
+# ── Agent hook session logs ──
+# Written by .claude/hooks/ and .opencode/hooks/ on every tool call. chat.json
+# holds the full session transcript, so these must never be committed.
+# Override the location with OPENCODE_HOOKS_LOG_DIR.
+logs/
+
+# ── Agent framework: machine-local output ──
+# Regenerated per machine by `adws upgrade`; never commit them.
+usr/
+.mcp.json
+playwright-mcp-config.json
+.claude/CLAUDE.md
+AGENTS.md.backup-*
+manifest.yml.backup-*
+
+# Editor/manual backups and Celery beat runtime state
+*.backup
+*.backup[0-9]*
+celerybeat-schedule*
+
+# Coverage data
+.coverage
+.coverage.*
+coverage.xml

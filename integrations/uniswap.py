@@ -15,6 +15,8 @@ from eth_account import Account
 
 from config import get_settings, SUPPORTED_NETWORKS
 from core.execution.engine import ExchangeAdapter, TradeQuote, ExecutionError
+from core.tokens import token_addresses, is_supported_token, to_base_units, from_base_units, UnknownTokenError
+from core.contracts import get_uniswap, UnknownContractError
 
 logger = logging.getLogger(__name__)
 settings = get_settings()
@@ -53,9 +55,8 @@ class UniswapV2Adapter(ExchangeAdapter):
     Uniswap V2 adapter for token swaps.
     """
     
-    # Uniswap V2 contract addresses (Ethereum mainnet)
-    ROUTER_ADDRESS = "0x7a250d5630B4cF539739dF2C5dAcb4c659F2488D"
-    FACTORY_ADDRESS = "0x5C69bEe701ef814a2B6a3EDD4B1652CB9cc5aA6f"
+    # Which Uniswap deployment to resolve from core.contracts for self.network
+    UNISWAP_VERSION = "v2"
     
     # Uniswap V2 Router ABI (simplified)
     ROUTER_ABI = [
@@ -98,18 +99,18 @@ class UniswapV2Adapter(ExchangeAdapter):
     
     def __init__(self, network: str = "ethereum"):
         super().__init__(network)
+        
+        # Contract and token addresses for this network, from the shared registries
+        try:
+            deployment = get_uniswap(self.UNISWAP_VERSION, network)
+            self.token_addresses = token_addresses(network)
+        except (UnknownContractError, UnknownTokenError) as e:
+            raise UniswapError(str(e))
+        self.router_address = deployment.router
+        self.factory_address = deployment.factory
+        
         self.w3 = self._get_web3_connection()
         self.router_contract = self._get_router_contract()
-        
-        # Common token addresses (Ethereum mainnet)
-        self.token_addresses = {
-            "ETH": "0x0000000000000000000000000000000000000000",  # Native ETH
-            "WETH": "0xC02aaA39b223FE8C0625C6E8C11028C0C5B9B2dB",
-            "USDC": "0xA0b86a33E6441E6C7C7C8C7C8C7C8C7C8C7C8C7C",
-            "USDT": "0xdAC17F958D2ee523a2206206994597C13D831ec7",
-            "DAI": "0x6B175474E89094C44Da98b954EedeAC495271d0F",
-            "WBTC": "0x2260FAC5E5542a773Aa44fBCfeDf7C193bc2C599"
-        }
     
     def _get_web3_connection(self) -> Web3:
         """Get Web3 connection for the network."""
@@ -133,7 +134,7 @@ class UniswapV2Adapter(ExchangeAdapter):
     def _get_router_contract(self) -> Contract:
         """Get Uniswap V2 router contract."""
         return self.w3.eth.contract(
-            address=Web3.to_checksum_address(self.ROUTER_ADDRESS),
+            address=self.router_address,
             abi=self.ROUTER_ABI
         )
     
@@ -155,6 +156,19 @@ class UniswapV2Adapter(ExchangeAdapter):
             raise UniswapError(f"Unknown token: {token}")
         
         return Web3.to_checksum_address(address)
+    
+    def _to_base_units(self, amount: float, token: str) -> int:
+        """Human amount -> integer base units using the token's registered decimals."""
+        if is_supported_token(token, self.network):
+            return to_base_units(amount, token, self.network)
+        self.logger.warning(f"Unknown decimals for {token}; assuming 18")
+        return int(Decimal(str(amount)) * 10**18)
+    
+    def _from_base_units(self, amount: int, token: str) -> float:
+        """Integer base units -> human amount using the token's registered decimals."""
+        if is_supported_token(token, self.network):
+            return from_base_units(amount, token, self.network)
+        return amount / 10**18
     
     def _build_swap_path(self, token_in: str, token_out: str) -> List[str]:
         """
@@ -224,8 +238,8 @@ class UniswapV2Adapter(ExchangeAdapter):
             # Build swap path
             path = self._build_swap_path(token_in, token_out)
             
-            # Convert amount to wei (assuming 18 decimals for simplicity)
-            amount_in_wei = int(amount_in * 10**18)
+            # Convert amount to base units using the token's decimals
+            amount_in_wei = self._to_base_units(amount_in, token_in)
             
             # Get amounts out from Uniswap
             amounts_out = await asyncio.to_thread(
@@ -233,7 +247,7 @@ class UniswapV2Adapter(ExchangeAdapter):
             )
             
             amount_out_wei = amounts_out[-1]
-            amount_out = amount_out_wei / 10**18
+            amount_out = self._from_base_units(amount_out_wei, token_out)
             
             # Calculate price and slippage
             price = amount_out / amount_in if amount_in > 0 else 0
@@ -290,7 +304,8 @@ class UniswapV2Adapter(ExchangeAdapter):
             
             # Calculate minimum amount out with slippage
             min_amount_out = quote.amount_out * (1 - slippage / 100)
-            min_amount_out_wei = int(min_amount_out * 10**18)
+            min_amount_out_wei = self._to_base_units(min_amount_out, quote.token_out)
+            amount_in_wei = self._to_base_units(quote.amount_in, quote.token_in)
             
             # Set deadline (10 minutes from now)
             deadline = int((datetime.utcnow() + timedelta(minutes=10)).timestamp())
@@ -298,8 +313,6 @@ class UniswapV2Adapter(ExchangeAdapter):
             # Build transaction
             if quote.token_in.upper() == "ETH":
                 # ETH to token swap
-                amount_in_wei = int(quote.amount_in * 10**18)
-                
                 transaction = self.router_contract.functions.swapExactETHForTokens(
                     min_amount_out_wei,
                     path,
@@ -314,8 +327,6 @@ class UniswapV2Adapter(ExchangeAdapter):
                 })
             else:
                 # Token to token swap
-                amount_in_wei = int(quote.amount_in * 10**18)
-                
                 transaction = self.router_contract.functions.swapExactTokensForTokens(
                     amount_in_wei,
                     min_amount_out_wei,
@@ -393,25 +404,113 @@ class UniswapV2Adapter(ExchangeAdapter):
 
 class UniswapV3Adapter(UniswapV2Adapter):
     """
-    Uniswap V3 adapter for token swaps.
-    Extends V2 adapter with V3-specific functionality.
+    Uniswap V3 adapter.
+
+    Quotes come from the V3 Quoter contract (quoteExactInputSingle), probing the
+    standard fee tiers and keeping the best output. Execution through this
+    adapter is not implemented — the inherited V2 swap functions do not exist on
+    the V3 SwapRouter — so execute_trade refuses rather than sending a
+    transaction that is guaranteed to revert.
     """
     
-    # Uniswap V3 contract addresses (Ethereum mainnet)
-    ROUTER_ADDRESS = "0xE592427A0AEce92De3Edee1F18E0157C05861564"
-    FACTORY_ADDRESS = "0x1F98431c8aD98523631AE4a59f267346ea31F984"
+    UNISWAP_VERSION = "v3"
+    
+    # Standard V3 pool fee tiers in hundredths of a bip: 0.05%, 0.3%, 1%
+    FEE_TIERS = (500, 3000, 10000)
+    
+    QUOTER_ABI = [
+        {
+            "inputs": [
+                {"internalType": "address", "name": "tokenIn", "type": "address"},
+                {"internalType": "address", "name": "tokenOut", "type": "address"},
+                {"internalType": "uint24", "name": "fee", "type": "uint24"},
+                {"internalType": "uint256", "name": "amountIn", "type": "uint256"},
+                {"internalType": "uint160", "name": "sqrtPriceLimitX96", "type": "uint160"}
+            ],
+            "name": "quoteExactInputSingle",
+            "outputs": [{"internalType": "uint256", "name": "amountOut", "type": "uint256"}],
+            "stateMutability": "nonpayable",
+            "type": "function"
+        }
+    ]
     
     def __init__(self, network: str = "ethereum"):
         super().__init__(network)
-        # Override with V3 router
-        # TODO: Implement V3-specific contract interactions
+        deployment = get_uniswap(self.UNISWAP_VERSION, network)
+        if not deployment.quoter:
+            raise UniswapError(f"No Uniswap V3 quoter registered on {network}")
+        self.quoter_address = deployment.quoter
+        self.quoter_contract = self.w3.eth.contract(
+            address=self.quoter_address,
+            abi=self.QUOTER_ABI
+        )
+    
+    async def _quote_single_hop(self, token_in_addr: str, token_out_addr: str, amount_in_wei: int) -> Tuple[int, int]:
+        """
+        Ask the Quoter for the output of a single-hop swap on each fee tier.
+        
+        A tier whose pool does not exist reverts; those are skipped. Returns the
+        (amount_out_wei, fee) of the best-paying tier.
+        """
+        best: Optional[Tuple[int, int]] = None
+        for fee in self.FEE_TIERS:
+            try:
+                amount_out = await asyncio.to_thread(
+                    self.quoter_contract.functions.quoteExactInputSingle(
+                        token_in_addr, token_out_addr, fee, amount_in_wei, 0
+                    ).call
+                )
+            except Exception as e:
+                self.logger.debug(f"No V3 pool at fee tier {fee} for {token_in_addr}->{token_out_addr}: {e}")
+                continue
+            if amount_out and (best is None or amount_out > best[0]):
+                best = (int(amount_out), fee)
+        
+        if best is None:
+            raise UniswapError(
+                f"No Uniswap V3 pool found for {token_in_addr}->{token_out_addr} "
+                f"in fee tiers {self.FEE_TIERS}"
+            )
+        return best
     
     async def get_quote(self, token_in: str, token_out: str, amount_in: float) -> TradeQuote:
-        """Get quote using Uniswap V3 pricing."""
-        # TODO: Implement V3-specific quote logic with concentrated liquidity
-        quote = await super().get_quote(token_in, token_out, amount_in)
-        quote.exchange = "uniswap_v3"
-        return quote
+        """Get a quote from the Uniswap V3 Quoter."""
+        try:
+            path = self._build_swap_path(token_in, token_out)
+            if len(path) != 2:
+                raise UniswapError("Multi-hop Uniswap V3 quotes are not supported")
+            
+            amount_in_wei = self._to_base_units(amount_in, token_in)
+            amount_out_wei, fee = await self._quote_single_hop(path[0], path[1], amount_in_wei)
+            amount_out = self._from_base_units(amount_out_wei, token_out)
+            
+            gas_estimate = await self.estimate_gas(token_in, token_out, amount_in)
+            
+            return TradeQuote(
+                exchange="uniswap_v3",
+                token_in=token_in,
+                token_out=token_out,
+                amount_in=amount_in,
+                amount_out=amount_out,
+                price=amount_out / amount_in if amount_in > 0 else 0,
+                gas_estimate=gas_estimate,
+                slippage=0.01,  # 1% default slippage estimate
+                fees=amount_in * fee / 1_000_000,  # pool fee is in hundredths of a bip
+                valid_until=datetime.utcnow() + timedelta(minutes=5),
+                route=path
+            )
+        except UniswapError:
+            raise
+        except Exception as e:
+            self.logger.error(f"Error getting Uniswap V3 quote: {e}")
+            raise UniswapError(f"Failed to get quote: {e}")
+    
+    async def execute_trade(self, quote: TradeQuote, wallet_address: str, slippage: float) -> str:
+        """Not implemented: the inherited V2 swap calls do not exist on the V3 SwapRouter."""
+        raise UniswapError(
+            "Uniswap V3 execution via UniswapV3Adapter is not implemented; "
+            "use the V2 adapter or core.tasks.execute_trade (exactInputSingle)"
+        )
     
     async def estimate_gas(self, token_in: str, token_out: str, amount_in: float) -> int:
         """Estimate gas for V3 swaps."""
