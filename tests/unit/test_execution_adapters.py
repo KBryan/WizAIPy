@@ -171,6 +171,7 @@ class TestEnsureAdapters:
             nonlocal calls
             calls += 1
             import time
+
             time.sleep(0.05)  # runs in a worker thread via asyncio.to_thread
             adapter = Mock()
             adapter.network = network

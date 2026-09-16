@@ -70,22 +70,24 @@ jobs:
       - name: Install linters
         run: pip install "flake8==6.1.0" "black==23.11.0" "mypy==1.7.1"
 
-      # Hard gate: syntax errors, undefined names, unused-import-in-__all__ etc.
+      # Tool settings come from pyproject.toml and .flake8 — keep options out of here.
+
+      # Hard gate: syntax errors, undefined names, comparison/assert misuse.
       - name: flake8 (errors only)
-        run: flake8 --count --select=E9,F63,F7,F82 --show-source --statistics api core integrations config.py tests
+        run: flake8 --select=E9,F63,F7,F82 --show-source api core integrations config.py tests
 
       # Informational until the existing debt is paid down (see .agent/baseline.md).
       # Each step's output is the current count; flip continue-on-error off once it hits zero.
       - name: flake8 (full)
         continue-on-error: true
-        run: flake8 --count --max-line-length=120 --statistics --exclude=.venv,alembic api core integrations config.py
+        run: flake8 api core integrations config.py tests
 
       - name: black --check
         continue-on-error: true
-        run: black --check --diff api core integrations config.py tests
+        run: black --check --diff .
 
       - name: mypy
         continue-on-error: true
         run: |
           pip install -r requirements.txt
-          mypy api core integrations config.py --ignore-missing-imports
+          mypy

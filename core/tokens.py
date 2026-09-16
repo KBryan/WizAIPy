@@ -64,9 +64,7 @@ def get_token(symbol: str, network: str = "ethereum") -> TokenInfo:
     try:
         return TOKENS[network][symbol.upper()]
     except KeyError:
-        raise UnknownTokenError(
-            f"Unknown token {symbol!r} on network {network!r}"
-        ) from None
+        raise UnknownTokenError(f"Unknown token {symbol!r} on network {network!r}") from None
 
 
 def get_token_address(symbol: str, network: str = "ethereum") -> str:
@@ -89,9 +87,7 @@ def is_supported_token(symbol: str, network: str = "ethereum") -> bool:
     return symbol.upper() in TOKENS.get(network, {})
 
 
-def to_base_units(
-    amount: Union[float, str, Decimal], symbol: str, network: str = "ethereum"
-) -> int:
+def to_base_units(amount: Union[float, str, Decimal], symbol: str, network: str = "ethereum") -> int:
     """
     Convert a human amount (e.g. 1.5 USDC) to integer base units (wei-equivalent).
 

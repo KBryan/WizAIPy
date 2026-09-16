@@ -53,16 +53,16 @@ paths:
 # (see AGENTS.md > Development Commands > Validation for a hermetic export line).
 validation:
   test: ".venv/bin/python -m pytest -p no:cacheprovider"
-  lint: ".venv/bin/python -m flake8 --max-line-length=120 --exclude=.venv,alembic api core integrations config.py"
-  format: ".venv/bin/python -m black --check api core integrations config.py tests"
-  typecheck: ".venv/bin/python -m mypy api core integrations config.py --ignore-missing-imports"
+  lint: ".venv/bin/python -m flake8 api core integrations config.py tests"
+  format: ".venv/bin/python -m black --check ."
+  typecheck: ".venv/bin/python -m mypy"
   build: "docker build -t wizaipy ."
 
 validate:
   test: ".venv/bin/python -m pytest -p no:cacheprovider"
-  lint: ".venv/bin/python -m flake8 --max-line-length=120 --exclude=.venv,alembic api core integrations config.py"
-  format: ".venv/bin/python -m black --check api core integrations config.py tests"
-  typecheck: ".venv/bin/python -m mypy api core integrations config.py --ignore-missing-imports"
+  lint: ".venv/bin/python -m flake8 api core integrations config.py tests"
+  format: ".venv/bin/python -m black --check ."
+  typecheck: ".venv/bin/python -m mypy"
   build: "docker build -t wizaipy ."
 
 run:

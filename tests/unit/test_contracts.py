@@ -14,12 +14,8 @@ class TestContractRegistry:
         for network, versions in UNISWAP.items():
             for version, deployment in versions.items():
                 assert deployment.version == version
-                assert is_checksum_address(
-                    deployment.router
-                ), f"{network}/{version} router"
-                assert is_checksum_address(
-                    deployment.factory
-                ), f"{network}/{version} factory"
+                assert is_checksum_address(deployment.router), f"{network}/{version} router"
+                assert is_checksum_address(deployment.factory), f"{network}/{version} factory"
 
     @pytest.mark.unit
     def test_canonical_mainnet_deployments(self):

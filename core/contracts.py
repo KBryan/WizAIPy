@@ -32,9 +32,7 @@ class UniswapDeployment:
     quoter: Optional[str] = None  # V3 only: off-chain price quoter (QuoterV1)
 
 
-def _uniswap(
-    version: str, router: str, factory: str, quoter: Optional[str] = None
-) -> UniswapDeployment:
+def _uniswap(version: str, router: str, factory: str, quoter: Optional[str] = None) -> UniswapDeployment:
     return UniswapDeployment(
         version,
         checksummed(f"uniswap {version} router", router),
@@ -68,6 +66,4 @@ def get_uniswap(version: str, network: str = "ethereum") -> UniswapDeployment:
     try:
         return UNISWAP[network][version.lower()]
     except KeyError:
-        raise UnknownContractError(
-            f"No Uniswap {version!r} deployment registered on {network!r}"
-        ) from None
+        raise UnknownContractError(f"No Uniswap {version!r} deployment registered on {network!r}") from None

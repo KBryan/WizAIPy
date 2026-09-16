@@ -43,6 +43,7 @@
 | `docs/` | docs | `API_DOCUMENTATION.md`, `DEPLOYMENT_GUIDE.md` | — |
 | `.claude/` | agent | Claude Code hooks, commands (skills), settings | `.claude/settings.json` |
 | `.github/workflows/ci.yml` | ci | GitHub Actions: pytest on 3.11 + 3.12 (`-m "not external"`), flake8 error gate; full flake8/black/mypy informational | — |
+| `pyproject.toml`, `.flake8` | config | Tool settings: pytest/coverage/black/mypy in pyproject, flake8 in `.flake8` (line length 120). No packaging metadata — deps stay in `requirements.txt` | — |
 | `.pre-commit-config.yaml` | hooks | black, flake8 error gate, whitespace/EOF fixers, YAML check, private-key and debug-statement detection — on staged files only | — |
 | `.github/PULL_REQUEST_TEMPLATE.md` | template | PR body: summary, risk-area checkboxes (mirror the Escalation Triggers), behaviour changes, test plan, checklist | — |
 | `.github/ISSUE_TEMPLATE/` | templates | Issue forms: bug report, feature request, **trading incident** (tx hashes, mode, containment); security issues redirected to private advisories | — |
@@ -111,21 +112,21 @@ export SECRET_KEY=test DATABASE_URL=sqlite:///./test.db REDIS_URL=redis://localh
 <!-- DETECTED:test_command -->.venv/bin/python -m pytest -p no:cacheprovider<!-- /DETECTED -->
 
 # Run linter
-<!-- DETECTED:lint_command -->.venv/bin/python -m flake8 --max-line-length=120 --exclude=.venv,alembic api core integrations config.py<!-- /DETECTED -->
+<!-- DETECTED:lint_command -->.venv/bin/python -m flake8 api core integrations config.py tests<!-- /DETECTED -->
 
 # Run formatter check
-<!-- DETECTED:format_command -->.venv/bin/python -m black --check api core integrations config.py tests<!-- /DETECTED -->
+<!-- DETECTED:format_command -->.venv/bin/python -m black --check .<!-- /DETECTED -->
 
 # Run type checker
-<!-- DETECTED:typecheck_command -->.venv/bin/python -m mypy api core integrations config.py --ignore-missing-imports<!-- /DETECTED -->
+<!-- DETECTED:typecheck_command -->.venv/bin/python -m mypy<!-- /DETECTED -->
 
 # Run build (container image)
 docker build -t wizaipy .
 ```
 
 Notes on validation config:
-- `pytest.ini` applies `-v --tb=short --strict-markers`, coverage over `api`/`core`/`integrations` (reported, not enforced), and `asyncio_mode = auto`. A full run takes ~8s, but `TestCoinGeckoIntegration` hits the live CoinGecko API and adds ~60s whenever CoinGecko answers 429 (`Retry-After: 60`). Deselect with `-k 'not CoinGecko'` for a fast loop.
-- No flake8/black/mypy config files exist; the commands above use sensible defaults. See `.agent/baseline.md` for current counts.
+- All tool settings live in `pyproject.toml` (pytest, coverage, black, mypy) and `.flake8` (flake8 cannot read pyproject). CI and pre-commit pass no options beyond the flake8 `--select` error gate. pytest applies `-v --tb=short --strict-markers`, coverage over `api`/`core`/`integrations` (reported, not enforced), and `asyncio_mode = auto`. Line length is 120 for both black and flake8. A full run takes ~8s, but `TestCoinGeckoIntegration` hits the live CoinGecko API and adds ~60s whenever CoinGecko answers 429 (`Retry-After: 60`). Deselect with `-k 'not CoinGecko'` for a fast loop.
+- See `.agent/baseline.md` for current lint/format/type counts.
 
 ### Run Locally
 
@@ -152,7 +153,7 @@ Swagger UI is only mounted when `DEBUG=true` (`/docs`, `/redoc`).
 
 ### Style
 
-- PEP 8; format with `black` (23.11), lint with `flake8`, type-check with `mypy` (all pinned in `requirements.txt`).
+- PEP 8 at line length 120; format with `black` (23.11), lint with `flake8`, type-check with `mypy` (all pinned in `requirements.txt`, configured in `pyproject.toml` / `.flake8`).
 - Type hints on all function signatures (README code standard).
 - Module docstring at the top of every file describing its role (existing convention).
 - Keep functions focused — one responsibility per function; prefer < 50 lines.

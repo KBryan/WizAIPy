@@ -1,8 +1,8 @@
 # Repository Maturity Classification
 
 **Date**: 2026-09-14
-**Level**: 2 — Better (CI, pre-commit, PR and issue templates added 2026-09-15; a shared tool config is the remaining gap for Level 3)
-**Justification**: Before this run the repo was Level 0 (AGENTS.md was an unfilled template, manifest.yml had empty source/tests/validation fields, no working validation commands documented). `/prime` produced a complete AGENTS.md and manifest.yml, and the discovered test/lint/format/typecheck commands all execute (Level 2). They execute but are not green — 21/54 tests fail and lint/format/types are far from clean — and the repo has no CI, no templates, and no `.pre-commit-config.yaml`, so it does not yet meet Level 3.
+**Level**: 3 — More (CI, pre-commit, PR and issue templates added 2026-09-15; shared tool config in pyproject.toml/.flake8) — Level 3 criteria met; see Path to Next Level for Level 4
+**Justification**: Started at Level 0 on 2026-09-14 (template AGENTS.md, empty manifest.yml, no working commands). Now: complete AGENTS.md and manifest.yml (Level 1); documented test/lint/format/typecheck commands that run, with a green suite of 105 tests (Level 2); CI on two Python versions, pre-commit hooks, PR and issue templates, a risk model with escalation triggers in AGENTS.md, and 37 agent skills under `.claude/commands` (Level 3). Lint/format/type debt remains but is measured, not blocking.
 
 ## What Exists
 - `AGENTS.md` — fully populated (project overview, navigation, architecture, commands, risk model, escalation, env vars, known issues)
@@ -19,11 +19,11 @@
 - Green test baseline (21 failures — mostly test-side patch targets; see `.agent/baseline.md`)
 - Active pytest config (`pytest.ini` uses `[tool:pytest]`, which pytest ignores; `pytest-cov` not in requirements)
 - Working fresh install: `requirements.txt` lacks `setuptools<81` and `eth-typing<5` pins needed by `web3==6.12.0`
-- flake8 / black / mypy configuration files (`setup.cfg`, `pyproject.toml`, or `.flake8`)
 
-## Path to Next Level (3 — More)
-1. Fix `pytest.ini` header to `[pytest]`; add `pytest-cov` and drop `--cov-fail-under=80` until coverage is real.
-2. Pin `setuptools<81` and `eth-typing<5` in `requirements.txt` (or upgrade web3 to 7.x).
-3. Fix `tests/unit/test_api.py` patch targets (`api.routers.<router>.get_current_user` instead of `api.deps.get_current_user`) or set `BYPASS_NFT_GATE=true` in a test fixture — recovers ~15 tests.
-4. Mock `Web3` in `tests/integration/test_integrations.py` Uniswap tests (4 tests) and fix 3 momentum-strategy assertions.
-6. Add a `pyproject.toml`/`setup.cfg` with tool config so flake8/black/mypy settings are not repeated across CI and pre-commit.
+## Path to Next Level (4 — Custom)
+1. Pay down the informational CI debt and flip each step to blocking: `black .` once over the tree (~30 files), then flake8 (~750, mostly whitespace), then mypy (110 errors in 15 files — start with the modules listed in the commented `[[tool.mypy.overrides]]` block in `pyproject.toml`).
+2. Set `fail_under` in `[tool.coverage.report]` once coverage (46%) is meaningful; add tests for `core/tasks.py` and `api/routers/trade.py` real-data paths.
+3. Team escalation paths: replace the single-maintainer contact in AGENTS.md with a CODEOWNERS file mapping the High-risk paths (auth, execution, registries, migrations) to required reviewers, and enable branch protection requiring CI + a CODEOWNERS review on `main`.
+4. Enable private vulnerability reporting (Settings → Code security) so the security contact link in `.github/ISSUE_TEMPLATE/config.yml` works.
+5. Register `skale` / `beam` tokens and Uniswap deployments in `core/tokens.py` / `core/contracts.py` before enabling those networks; add a per-network risk override to the risk model.
+6. Route `/trade/execute` through the execution engine (or retire the engine) so there is one trade path to review, not two.

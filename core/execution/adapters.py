@@ -36,9 +36,7 @@ def _adapter_factories() -> Dict[str, Callable[[str], ExchangeAdapter]]:
     }
 
 
-def register_default_adapters(
-    engine: TradeExecutionEngine, network: str = "ethereum"
-) -> Dict[str, ExchangeAdapter]:
+def register_default_adapters(engine: TradeExecutionEngine, network: str = "ethereum") -> Dict[str, ExchangeAdapter]:
     """
     Register an adapter on the engine for every supported exchange on a network.
 
@@ -68,19 +66,13 @@ def register_default_adapters(
         registered[exchange] = adapter
 
     _last_attempt[network] = time.monotonic()
-    logger.info(
-        f"Registered {len(registered)} exchange adapter(s) on {network}: {sorted(registered) or 'none'}"
-    )
+    logger.info(f"Registered {len(registered)} exchange adapter(s) on {network}: {sorted(registered) or 'none'}")
     return registered
 
 
-def registered_exchanges(
-    engine: TradeExecutionEngine, network: str = "ethereum"
-) -> List[str]:
+def registered_exchanges(engine: TradeExecutionEngine, network: str = "ethereum") -> List[str]:
     """Names of the adapters registered on the engine for a network, sorted."""
-    return sorted(
-        name for name, adapter in engine.adapters.items() if adapter.network == network
-    )
+    return sorted(name for name, adapter in engine.adapters.items() if adapter.network == network)
 
 
 async def ensure_adapters(

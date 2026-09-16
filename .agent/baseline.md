@@ -1,7 +1,7 @@
 # Validation Baseline
 
 **Date**: 2026-09-14 (updated after integration test fix — suite green)
-**Maturity Level**: 2
+**Maturity Level**: 3
 **Environment**: uv-managed venv, CPython 3.12.14, `requirements.txt` (now pins `setuptools<81`, `eth-typing<5`, `pytest-cov`)
 **Env vars for run**: `SECRET_KEY=test DATABASE_URL=sqlite:///./test.db REDIS_URL=redis://localhost:6379/0 ETHEREUM_RPC_URL=http://localhost:8545 PRIVATE_KEY=0x…01 CELERY_BROKER_URL=redis://localhost:6379/1 CELERY_RESULT_BACKEND=redis://localhost:6379/2` (no live Postgres/Redis/RPC)
 
@@ -25,4 +25,3 @@ None.
 `tests/integration/test_integrations.py` — **all passing (21/21 + 3 live-API skips)**. Was 9 failures, all test-side: Uniswap tests replaced `integrations.uniswap.Web3` with a bare MagicMock so `is_address`/`to_checksum_address` returned mocks (now `patch(..., wraps=Web3)`); Twitter tests patched `config.get_settings` after `integrations.twitter` had already captured `settings` at import (now patch `integrations.twitter.settings`); CoinGecko error test mocked the awaited `response.text()` with a sync Mock.
 
 `tests/unit/test_api.py` — **all passing (39/39)**. Was 15 failures: tests patched `api.deps.get_current_user`, but that function is captured inside `Depends()` at import time, so patches never took effect. Fixed by overriding via `app.dependency_overrides` (`authenticated_user` / `anonymous_user` / `trade_deps` fixtures) and patching `verify_nft_ownership` / `parse_trading_prompt` in the router modules where they are called.
-

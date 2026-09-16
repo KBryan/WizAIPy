@@ -1,7 +1,8 @@
 # Install once: pip install pre-commit && pre-commit install
 # Hooks run only on the files in a commit, so existing style debt in untouched
 # files does not block you; black/whitespace fixes are applied to what you touch.
-# Tool versions match requirements.txt and .github/workflows/ci.yml.
+# Tool versions match requirements.txt and .github/workflows/ci.yml; tool settings
+# come from pyproject.toml and .flake8.
 
 repos:
   - repo: https://github.com/pre-commit/pre-commit-hooks
@@ -31,4 +32,3 @@ repos:
         # comparisons/asserts. Full style checking stays informational in CI
         # until the existing debt is paid down.
         args: ["--select=E9,F63,F7,F82", "--show-source"]
-        exclude: ^(alembic/|\.venv/)
