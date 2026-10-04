@@ -1,0 +1,10 @@
+# Agent tooling pin — the single source of truth for which Agentic
+# Engineering Framework release this repo targets.
+#
+# The framework is CONSUMED, never vendored: skills, standards docs and
+# adapters resolve from this package. `adws doctor` reads this pin and
+# reports a finding when it disagrees with manifest.yml's stamp.
+#
+# Upgrading: bump here, `uv tool install adws==<new>`, then `adws upgrade`
+# (install AT the pin — upgrade stamps the version of the CLI that ran).
+adws==2.12.1

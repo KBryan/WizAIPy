@@ -4,7 +4,7 @@ Handles prompt-to-trade conversion and trade execution.
 """
 import json
 
-from fastapi import APIRouter, Depends, HTTPException, status, BackgroundTasks
+from fastapi import APIRouter, Depends, HTTPException, Query, status, BackgroundTasks
 from pydantic import BaseModel, Field
 from typing import Optional, Dict, Any, List
 from enum import Enum
@@ -16,7 +16,10 @@ import uuid
 import redis
 
 from config import get_settings
-from api.deps import get_current_user, trade_rate_limiter, get_redis_client
+from api.deps import get_current_user, trade_rate_limiter, api_rate_limiter, get_redis_client
+from core.execution.engine import trade_engine
+from core.execution.adapters import ensure_adapters
+from core.tokens import get_token, get_token_address, NATIVE_TOKEN_ADDRESS
 from core.tasks import execute_trade_task
 
 router = APIRouter()
@@ -80,6 +83,23 @@ class TradeResponse(BaseModel):
     message: str
     transaction_hash: Optional[str] = None
     error: Optional[str] = None
+
+
+class QuoteResponse(BaseModel):
+    """Response model for a swap quote from the execution engine."""
+    exchange: str
+    network: str
+    token_in: str
+    token_out: str
+    amount_in: float
+    amount_out: float
+    price: float = Field(..., description="amount_out / amount_in")
+    fees: float = Field(..., description="Exchange fee, in units of token_in")
+    slippage: float = Field(..., description="Adapter's slippage estimate, as a fraction")
+    gas_estimate: int
+    route: List[str] = Field(default_factory=list, description="Token addresses along the swap path")
+    valid_until: datetime
+    exchanges_checked: List[str] = Field(..., description="Exchanges the quote was compared across")
 
 
 class PortfolioResponse(BaseModel):
@@ -265,6 +285,72 @@ async def execute_direct_trade(
         )
 
 
+@router.get("/quote", response_model=QuoteResponse)
+async def get_quote(
+        token_in: str = Query(..., description="Input token symbol or address"),
+        token_out: str = Query(..., description="Output token symbol or address"),
+        amount_in: float = Query(..., gt=0, description="Input amount in token_in units"),
+        exchange: Optional[str] = Query(None, description="Pin a single exchange, e.g. uniswap_v3"),
+        network: str = Query("ethereum", description="Blockchain network"),
+        current_user: Dict[str, Any] = Depends(get_current_user),
+        _rate_limit: None = Depends(api_rate_limiter)
+):
+    """
+    Get the best available swap quote from the execution engine.
+
+    Compares every exchange adapter registered for the network (net of fees)
+    unless `exchange` pins one. Read-only: nothing is executed.
+    """
+    if token_in.upper() == token_out.upper():
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="token_in and token_out must differ"
+        )
+
+    # Retries registration if startup found no reachable node (rate-limited)
+    available = await ensure_adapters(trade_engine, network)
+    if not available:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail=f"No exchange adapters available on {network} (is the RPC node reachable?)"
+        )
+
+    if exchange is not None:
+        if exchange not in available:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Unknown exchange {exchange!r} on {network}; available: {available}"
+            )
+        exchanges = [exchange]
+    else:
+        exchanges = available
+
+    logger.info(f"Quote request from {current_user['wallet_address']}: {amount_in} {token_in} -> {token_out} on {exchanges}")
+
+    quote = await trade_engine.get_best_quote(token_in, token_out, amount_in, exchanges)
+    if quote is None:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail=f"No exchange could quote {token_in} -> {token_out} on {exchanges}"
+        )
+
+    return QuoteResponse(
+        exchange=quote.exchange,
+        network=network,
+        token_in=quote.token_in,
+        token_out=quote.token_out,
+        amount_in=quote.amount_in,
+        amount_out=quote.amount_out,
+        price=quote.price,
+        fees=quote.fees,
+        slippage=quote.slippage,
+        gas_estimate=quote.gas_estimate,
+        route=quote.route or [],
+        valid_until=quote.valid_until,
+        exchanges_checked=exchanges,
+    )
+
+
 @router.get("/status/{trade_id}")
 async def get_trade_status(
         trade_id: str,
@@ -372,14 +458,14 @@ async def get_portfolio(
                 tokens=[
                     {
                         "symbol": "ETH",
-                        "address": "0x0000000000000000000000000000000000000000",
+                        "address": NATIVE_TOKEN_ADDRESS,
                         "balance": 2.5,
                         "value_usd": 4000.0,
                         "price_usd": 1600.0
                     },
                     {
                         "symbol": "USDC",
-                        "address": "0xA0b86a33E6441E6C7C7C8C7C8C7C8C7C8C7C8C7C",
+                        "address": get_token_address("USDC"),
                         "balance": 1000.0,
                         "value_usd": 1000.0,
                         "price_usd": 1.0
@@ -404,14 +490,14 @@ async def get_portfolio(
                 tokens=[
                     {
                         "symbol": "ETH",
-                        "address": "0x0000000000000000000000000000000000000000",
+                        "address": NATIVE_TOKEN_ADDRESS,
                         "balance": 2.5,
                         "value_usd": 4000.0,
                         "price_usd": 1600.0
                     },
                     {
                         "symbol": "USDC",
-                        "address": "0xA0b86a33E6441E6C7C7C8C7C8C7C8C7C8C7C8C7C",
+                        "address": get_token_address("USDC"),
                         "balance": 1000.0,
                         "value_usd": 1000.0,
                         "price_usd": 1.0
@@ -438,20 +524,10 @@ async def get_portfolio(
 
         logger.info(f"Fetching portfolio for wallet: {wallet_address}")
 
-        # Token contracts (mainnet addresses)
+        # ERC-20 tokens to report, resolved from the shared registry
         token_contracts = {
-            "USDC": {
-                "address": "0xA0b86a33E6441E6C7C7Cc6Cc9A3dAe3A1e09e0C2",
-                "decimals": 6
-            },
-            "USDT": {
-                "address": "0xdAC17F958D2ee523a2206206994597C13D831ec7",
-                "decimals": 6
-            },
-            "WETH": {
-                "address": "0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2",
-                "decimals": 18
-            }
+            symbol: {"address": get_token(symbol).address, "decimals": get_token(symbol).decimals}
+            for symbol in ("USDC", "USDT", "WETH")
         }
 
         # ERC20 ABI for balance queries
@@ -507,7 +583,7 @@ async def get_portfolio(
             if eth_balance > 0:
                 tokens.append({
                     "symbol": "ETH",
-                    "address": "0x0000000000000000000000000000000000000000",  # ETH native
+                    "address": NATIVE_TOKEN_ADDRESS,
                     "balance": eth_balance,
                     "value_usd": eth_value,
                     "price_usd": eth_price

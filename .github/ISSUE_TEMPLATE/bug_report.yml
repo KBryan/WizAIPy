@@ -1,0 +1,73 @@
+name: Bug report
+description: Something behaves incorrectly (not a live trade gone wrong — use "Trading incident" for that)
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        If this involves a private key, the NFT gate, or a way to make the bot trade wrongly, **do not file it here** — use the private security link on the previous page.
+
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened
+      description: What you did, what you expected, and what actually happened. Paste the error or response body if there is one.
+      placeholder: |
+        GET /trade/quote?token_in=ETH&token_out=USDC&amount_in=1 returns 503 even though ETHEREUM_RPC_URL is reachable...
+    validations:
+      required: true
+
+  - type: textarea
+    id: repro
+    attributes:
+      label: Steps to reproduce
+      description: Minimal steps. A failing `pytest` test or a `curl` command is ideal.
+      render: shell
+    validations:
+      required: true
+
+  - type: dropdown
+    id: area
+    attributes:
+      label: Area
+      options:
+        - API (api/)
+        - Auth / NFT gate / rate limiting (api/auth.py, api/deps.py)
+        - Execution engine or Uniswap adapters (core/execution/, integrations/uniswap.py)
+        - Celery tasks (core/tasks.py)
+        - Strategies (core/strategies/)
+        - LLM / prompt parsing (core/nlp/)
+        - Market data / Twitter (integrations/coingecko.py, integrations/twitter.py)
+        - Token or contract registry (core/tokens.py, core/contracts.py)
+        - Database / migrations
+        - Deployment / Docker / CI
+        - Docs
+        - Not sure
+    validations:
+      required: true
+
+  - type: input
+    id: version
+    attributes:
+      label: Commit or version
+      description: "`git rev-parse --short HEAD`, or the image tag if deployed"
+    validations:
+      required: true
+
+  - type: textarea
+    id: env
+    attributes:
+      label: Environment
+      description: Python version, OS, how it is running (uvicorn / docker-compose / k8s / Heroku), and relevant non-secret settings. **Never paste `.env` contents or keys.**
+      placeholder: |
+        Python 3.12.2, macOS, uvicorn --reload
+        REAL_DATA_MODE=false, BYPASS_NFT_GATE=true, network=ethereum
+    validations:
+      required: true
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs
+      description: Relevant log lines. Redact wallet addresses and RPC URLs with embedded keys.
+      render: text

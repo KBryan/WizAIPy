@@ -1,0 +1,73 @@
+# Tool configuration for WizAIPy. Single source of truth for pytest, black,
+# mypy and coverage settings — CI (.github/workflows/ci.yml) and pre-commit
+# (.pre-commit-config.yaml) invoke the tools without inline options so they
+# pick these up. flake8 does not read pyproject.toml; its settings are in
+# .flake8 alongside this file.
+#
+# This project is not packaged (no [project] table); dependencies are pinned
+# in requirements.txt and Python 3.11/3.12 per Dockerfile / runtime.txt.
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+python_classes = ["Test*"]
+python_functions = ["test_*"]
+asyncio_mode = "auto"
+addopts = [
+    "-v",
+    "--tb=short",
+    "--strict-markers",
+    "--disable-warnings",
+    "--cov=api",
+    "--cov=core",
+    "--cov=integrations",
+    "--cov-report=term-missing",
+    "--cov-report=html:htmlcov",
+]
+markers = [
+    "unit: Unit tests",
+    "integration: Integration tests",
+    "slow: Slow running tests",
+    "external: Tests that call live external services (deselected in CI with -m 'not external')",
+    "auth: Authentication related tests",
+    "trading: Trading functionality tests",
+    "strategy: Strategy tests",
+    "api: API endpoint tests",
+]
+filterwarnings = [
+    "ignore::DeprecationWarning",
+    "ignore::PendingDeprecationWarning",
+]
+
+[tool.coverage.run]
+source = ["api", "core", "integrations"]
+omit = ["*/__pycache__/*", "alembic/*"]
+
+[tool.coverage.report]
+skip_empty = true
+# Not enforced yet — see .agent/baseline.md. Raise once the suite covers more.
+# fail_under = 80
+
+[tool.black]
+line-length = 120
+target-version = ["py311", "py312"]
+extend-exclude = '''
+/(
+    alembic
+  | \.venv
+)/
+'''
+
+[tool.mypy]
+python_version = "3.11"
+files = ["api", "core", "integrations", "config.py"]
+ignore_missing_imports = true
+warn_unused_ignores = true
+warn_redundant_casts = true
+show_error_codes = true
+exclude = ["alembic/", "\\.venv/"]
+# Strictness is deliberately low while the 100+ existing errors are worked
+# down (see .agent/baseline.md). Tighten as modules become clean:
+# [[tool.mypy.overrides]]
+# module = ["core.tokens", "core.contracts", "core.execution.adapters"]
+# disallow_untyped_defs = true

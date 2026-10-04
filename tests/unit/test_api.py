@@ -9,6 +9,50 @@ import json
 
 from fastapi.testclient import TestClient
 from api.main import app
+from api.deps import get_current_user, get_optional_user, trade_rate_limiter, api_rate_limiter, get_redis_client
+from core.execution.engine import trade_engine, TradeQuote
+import core.execution.adapters as adapters_module
+
+TEST_WALLET = "0x1234567890abcdef1234567890abcdef12345678"
+
+
+def _override(dep, value):
+    """Register a FastAPI dependency override and return an undo callable."""
+    app.dependency_overrides[dep] = lambda: value
+    return lambda: app.dependency_overrides.pop(dep, None)
+
+
+@pytest.fixture
+def authenticated_user():
+    """Make every auth dependency resolve to a verified NFT holder.
+
+    get_current_user is captured inside Depends() at import time, so it must be
+    overridden through app.dependency_overrides rather than patched.
+    """
+    user = {"wallet_address": TEST_WALLET, "authenticated": True, "bypass": False}
+    undo = [_override(get_current_user, user), _override(get_optional_user, user)]
+    yield user
+    for fn in undo:
+        fn()
+
+
+@pytest.fixture
+def anonymous_user():
+    """Make optional-auth endpoints see no user."""
+    undo = _override(get_optional_user, None)
+    yield
+    undo()
+
+
+@pytest.fixture
+def trade_deps():
+    """Stub the Redis-backed rate limiter and client used by trade endpoints."""
+    fake_redis = Mock()
+    fake_redis.get.return_value = None
+    undo = [_override(trade_rate_limiter, None), _override(get_redis_client, fake_redis)]
+    yield fake_redis
+    for fn in undo:
+        fn()
 
 
 class TestHealthEndpoints:
@@ -103,7 +147,7 @@ class TestHealthEndpoints:
 class TestAuthEndpoints:
     """Test cases for authentication endpoints."""
     
-    @patch('api.deps.verify_nft_ownership')
+    @patch('api.routers.auth.verify_nft_ownership')
     def test_verify_nft_success(self, mock_verify):
         """Test successful NFT verification."""
         mock_verify.return_value = True
@@ -119,7 +163,7 @@ class TestAuthEndpoints:
             assert data["has_nft"] is True
             assert "access_token" in data
     
-    @patch('api.deps.verify_nft_ownership')
+    @patch('api.routers.auth.verify_nft_ownership')
     def test_verify_nft_failure(self, mock_verify):
         """Test failed NFT verification."""
         mock_verify.return_value = False
@@ -144,15 +188,8 @@ class TestAuthEndpoints:
             
             assert response.status_code == 400
     
-    @patch('api.deps.get_current_user')
-    def test_get_user_info(self, mock_get_user):
+    def test_get_user_info(self, authenticated_user):
         """Test getting user information."""
-        mock_get_user.return_value = {
-            "wallet_address": "0x1234567890abcdef1234567890abcdef12345678",
-            "authenticated": True,
-            "bypass": False
-        }
-        
         with TestClient(app) as client:
             response = client.get("/auth/me", headers={
                 "Authorization": "Bearer test_token"
@@ -171,14 +208,8 @@ class TestAuthEndpoints:
             
             assert response.status_code == 401
     
-    @patch('api.deps.get_optional_user')
-    def test_check_access_with_auth(self, mock_get_user):
+    def test_check_access_with_auth(self, authenticated_user):
         """Test access check with valid authentication."""
-        mock_get_user.return_value = {
-            "wallet_address": "0x1234567890abcdef1234567890abcdef12345678",
-            "authenticated": True
-        }
-        
         with TestClient(app) as client:
             response = client.get("/auth/check-access")
             
@@ -186,11 +217,8 @@ class TestAuthEndpoints:
             data = response.json()
             assert data["has_access"] is True
     
-    @patch('api.deps.get_optional_user')
-    def test_check_access_without_auth(self, mock_get_user):
+    def test_check_access_without_auth(self, anonymous_user):
         """Test access check without authentication."""
-        mock_get_user.return_value = None
-        
         with TestClient(app) as client:
             response = client.get("/auth/check-access")
             
@@ -202,25 +230,16 @@ class TestAuthEndpoints:
 class TestTradeEndpoints:
     """Test cases for trading endpoints."""
     
-    @patch('api.deps.get_current_user')
-    @patch('core.nlp.llm_client.llm_manager.parse_trading_prompt')
-    def test_prompt_to_trade(self, mock_parse, mock_get_user):
+    @patch('api.routers.trade.parse_trading_prompt')
+    def test_prompt_to_trade(self, mock_parse, trade_deps, authenticated_user):
         """Test natural language prompt to trade conversion."""
-        mock_get_user.return_value = {
-            "wallet_address": "0x1234567890abcdef1234567890abcdef12345678",
-            "authenticated": True
+        # Mock the prompt parser (called directly in the router, returns a dict)
+        mock_parse.return_value = {
+            "trade_type": "swap",
+            "token_in": "ETH",
+            "token_out": "USDC",
+            "amount_in": 1.0,
         }
-        
-        # Mock LLM parsing
-        from core.nlp.llm_client import TradingInstruction
-        mock_parse.return_value = TradingInstruction(
-            action="buy",
-            token_in="ETH",
-            token_out="USDC",
-            amount=1.0,
-            confidence=0.8,
-            reasoning="Test trade"
-        )
         
         with TestClient(app) as client:
             response = client.post("/trade/prompt", 
@@ -237,14 +256,8 @@ class TestTradeEndpoints:
             assert data["trade_type"] == "swap"
             assert data["dry_run"] is True
     
-    @patch('api.deps.get_current_user')
-    def test_direct_trade_execution(self, mock_get_user):
+    def test_direct_trade_execution(self, trade_deps, authenticated_user):
         """Test direct trade execution."""
-        mock_get_user.return_value = {
-            "wallet_address": "0x1234567890abcdef1234567890abcdef12345678",
-            "authenticated": True
-        }
-        
         with TestClient(app) as client:
             response = client.post("/trade/execute",
                 headers={"Authorization": "Bearer test_token"},
@@ -276,14 +289,8 @@ class TestTradeEndpoints:
             
             assert response.status_code == 401
     
-    @patch('api.deps.get_current_user')
-    def test_get_trade_status(self, mock_get_user):
+    def test_get_trade_status(self, trade_deps, authenticated_user):
         """Test getting trade status."""
-        mock_get_user.return_value = {
-            "wallet_address": "0x1234567890abcdef1234567890abcdef12345678",
-            "authenticated": True
-        }
-        
         with TestClient(app) as client:
             response = client.get("/trade/status/test_trade_123",
                 headers={"Authorization": "Bearer test_token"}
@@ -294,14 +301,8 @@ class TestTradeEndpoints:
             assert "trade_id" in data
             assert "status" in data
     
-    @patch('api.deps.get_current_user')
-    def test_get_portfolio(self, mock_get_user):
+    def test_get_portfolio(self, trade_deps, authenticated_user):
         """Test getting user portfolio."""
-        mock_get_user.return_value = {
-            "wallet_address": "0x1234567890abcdef1234567890abcdef12345678",
-            "authenticated": True
-        }
-        
         with TestClient(app) as client:
             response = client.get("/trade/portfolio",
                 headers={"Authorization": "Bearer test_token"}
@@ -313,14 +314,8 @@ class TestTradeEndpoints:
             assert "total_value_usd" in data
             assert "tokens" in data
     
-    @patch('api.deps.get_current_user')
-    def test_get_strategies(self, mock_get_user):
+    def test_get_strategies(self, trade_deps, authenticated_user):
         """Test getting available strategies."""
-        mock_get_user.return_value = {
-            "wallet_address": "0x1234567890abcdef1234567890abcdef12345678",
-            "authenticated": True
-        }
-        
         with TestClient(app) as client:
             response = client.get("/trade/strategies",
                 headers={"Authorization": "Bearer test_token"}
@@ -333,14 +328,8 @@ class TestTradeEndpoints:
                 assert "strategy_id" in data[0]
                 assert "name" in data[0]
     
-    @patch('api.deps.get_current_user')
-    def test_get_trade_history(self, mock_get_user):
+    def test_get_trade_history(self, trade_deps, authenticated_user):
         """Test getting trade history."""
-        mock_get_user.return_value = {
-            "wallet_address": "0x1234567890abcdef1234567890abcdef12345678",
-            "authenticated": True
-        }
-        
         with TestClient(app) as client:
             response = client.get("/trade/history",
                 headers={"Authorization": "Bearer test_token"}
@@ -354,17 +343,154 @@ class TestTradeEndpoints:
             assert "offset" in data
 
 
+def _fake_adapter(exchange: str, amount_out: float, fees: float, network: str = "ethereum"):
+    """An ExchangeAdapter stand-in whose get_quote returns a fixed TradeQuote."""
+    adapter = Mock()
+    adapter.network = network
+    adapter.get_quote = AsyncMock(return_value=TradeQuote(
+        exchange=exchange, token_in="ETH", token_out="USDC", amount_in=1.0,
+        amount_out=amount_out, price=amount_out, gas_estimate=150000, slippage=0.01,
+        fees=fees, valid_until=datetime(2030, 1, 1), route=["0xWETH", "0xUSDC"],
+    ))
+    return adapter
+
+
+class TestQuoteEndpoint:
+    """Test cases for GET /trade/quote."""
+
+    @pytest.fixture(autouse=True)
+    def no_startup_registration(self):
+        """Keep the lifespan from registering real adapters on top of the fakes."""
+        with patch("api.main.register_default_adapters"):
+            yield
+
+    @pytest.fixture
+    def engine_adapters(self):
+        """Swap two fake adapters onto the global trade engine for the test."""
+        adapters = {
+            "uniswap_v2": _fake_adapter("uniswap_v2", amount_out=1600.0, fees=0.003),
+            "uniswap_v3": _fake_adapter("uniswap_v3", amount_out=1602.0, fees=0.0005),
+        }
+        with patch.object(trade_engine, "adapters", adapters):
+            yield adapters
+
+    @pytest.fixture
+    def no_rate_limit(self):
+        undo = _override(api_rate_limiter, None)
+        yield
+        undo()
+
+    def test_returns_best_quote_across_exchanges(self, engine_adapters, no_rate_limit, authenticated_user):
+        with TestClient(app) as client:
+            response = client.get("/trade/quote", params={
+                "token_in": "ETH", "token_out": "USDC", "amount_in": 1.0
+            }, headers={"Authorization": "Bearer test_token"})
+
+        assert response.status_code == 200, response.text
+        data = response.json()
+        assert data["exchange"] == "uniswap_v3"  # higher net output
+        assert data["amount_out"] == 1602.0
+        assert data["fees"] == 0.0005
+        assert data["route"] == ["0xWETH", "0xUSDC"]
+        assert data["exchanges_checked"] == ["uniswap_v2", "uniswap_v3"]
+        for adapter in engine_adapters.values():
+            adapter.get_quote.assert_awaited_once_with("ETH", "USDC", 1.0)
+
+    def test_pinned_exchange(self, engine_adapters, no_rate_limit, authenticated_user):
+        with TestClient(app) as client:
+            response = client.get("/trade/quote", params={
+                "token_in": "ETH", "token_out": "USDC", "amount_in": 1.0, "exchange": "uniswap_v2"
+            }, headers={"Authorization": "Bearer test_token"})
+
+        assert response.status_code == 200
+        assert response.json()["exchange"] == "uniswap_v2"
+        assert response.json()["exchanges_checked"] == ["uniswap_v2"]
+        engine_adapters["uniswap_v3"].get_quote.assert_not_awaited()
+
+    def test_unknown_exchange_is_400(self, engine_adapters, no_rate_limit, authenticated_user):
+        with TestClient(app) as client:
+            response = client.get("/trade/quote", params={
+                "token_in": "ETH", "token_out": "USDC", "amount_in": 1.0, "exchange": "sushiswap"
+            }, headers={"Authorization": "Bearer test_token"})
+
+        assert response.status_code == 400
+        assert "uniswap_v2" in response.json()["detail"]
+
+    def test_same_token_is_400(self, engine_adapters, no_rate_limit, authenticated_user):
+        with TestClient(app) as client:
+            response = client.get("/trade/quote", params={
+                "token_in": "ETH", "token_out": "eth", "amount_in": 1.0
+            }, headers={"Authorization": "Bearer test_token"})
+        assert response.status_code == 400
+
+    def test_non_positive_amount_is_422(self, engine_adapters, no_rate_limit, authenticated_user):
+        with TestClient(app) as client:
+            response = client.get("/trade/quote", params={
+                "token_in": "ETH", "token_out": "USDC", "amount_in": 0
+            }, headers={"Authorization": "Bearer test_token"})
+        assert response.status_code == 422
+
+    def test_no_adapters_is_503(self, no_rate_limit, authenticated_user):
+        with patch.object(trade_engine, "adapters", {}), \
+             patch("core.execution.adapters.register_default_adapters", return_value={}) as register:
+            adapters_module._last_attempt.clear()
+            with TestClient(app) as client:
+                response = client.get("/trade/quote", params={
+                    "token_in": "ETH", "token_out": "USDC", "amount_in": 1.0
+                }, headers={"Authorization": "Bearer test_token"})
+        assert response.status_code == 503
+        register.assert_called_once()  # the 503 path tried to re-register
+
+    def test_recovers_once_node_is_reachable(self, no_rate_limit, authenticated_user):
+        """503 while the node is down, then 200 on the next request after it recovers."""
+        node_up = False
+
+        def register(engine, network):
+            if not node_up:
+                return {}
+            adapter = _fake_adapter("uniswap_v3", amount_out=1602.0, fees=0.0005)
+            engine.register_adapter("uniswap_v3", adapter)
+            return {"uniswap_v3": adapter}
+
+        params = {"token_in": "ETH", "token_out": "USDC", "amount_in": 1.0}
+        headers = {"Authorization": "Bearer test_token"}
+        with patch.object(trade_engine, "adapters", {}), \
+             patch("core.execution.adapters.register_default_adapters", side_effect=register):
+            adapters_module._last_attempt.clear()
+            with TestClient(app) as client:
+                assert client.get("/trade/quote", params=params, headers=headers).status_code == 503
+
+                node_up = True
+                adapters_module._last_attempt.clear()  # cooldown elapsed
+                response = client.get("/trade/quote", params=params, headers=headers)
+
+        assert response.status_code == 200
+        assert response.json()["exchange"] == "uniswap_v3"
+
+    def test_all_adapters_failing_is_503(self, engine_adapters, no_rate_limit, authenticated_user):
+        for adapter in engine_adapters.values():
+            adapter.get_quote.side_effect = Exception("rpc down")
+        with TestClient(app) as client:
+            response = client.get("/trade/quote", params={
+                "token_in": "ETH", "token_out": "USDC", "amount_in": 1.0
+            }, headers={"Authorization": "Bearer test_token"})
+        assert response.status_code == 503
+        assert "could quote" in response.json()["detail"]
+
+    def test_requires_auth(self, engine_adapters, no_rate_limit):
+        with TestClient(app) as client:
+            response = client.get("/trade/quote", params={
+                "token_in": "ETH", "token_out": "USDC", "amount_in": 1.0
+            })
+        assert response.status_code in (401, 403)
+
+
 class TestAdminEndpoints:
     """Test cases for admin endpoints."""
     
     @patch('api.routers.admin.is_admin_user')
-    @patch('api.deps.get_current_user')
-    def test_get_system_stats(self, mock_get_user, mock_is_admin):
+    def test_get_system_stats(self, mock_is_admin, authenticated_user):
         """Test getting system statistics."""
-        mock_get_user.return_value = {
-            "wallet_address": "0x1234567890abcdef1234567890abcdef12345678",
-            "authenticated": True
-        }
         mock_is_admin.return_value = True
         
         with TestClient(app) as client:
@@ -378,14 +504,8 @@ class TestAdminEndpoints:
             assert "active_trades" in data
             assert "total_volume_24h" in data
     
-    @patch('api.deps.get_current_user')
-    def test_admin_access_denied(self, mock_get_user):
+    def test_admin_access_denied(self, authenticated_user):
         """Test admin access denied for non-admin user."""
-        mock_get_user.return_value = {
-            "wallet_address": "0x1234567890abcdef1234567890abcdef12345678",
-            "authenticated": True
-        }
-        
         with TestClient(app) as client:
             response = client.get("/admin/stats",
                 headers={"Authorization": "Bearer user_token"}
@@ -394,13 +514,8 @@ class TestAdminEndpoints:
             assert response.status_code == 403
     
     @patch('api.routers.admin.is_admin_user')
-    @patch('api.deps.get_current_user')
-    def test_get_system_config(self, mock_get_user, mock_is_admin):
+    def test_get_system_config(self, mock_is_admin, authenticated_user):
         """Test getting system configuration."""
-        mock_get_user.return_value = {
-            "wallet_address": "0x1234567890abcdef1234567890abcdef12345678",
-            "authenticated": True
-        }
         mock_is_admin.return_value = True
         
         with TestClient(app) as client:
@@ -415,13 +530,8 @@ class TestAdminEndpoints:
             assert "supported_networks" in data
     
     @patch('api.routers.admin.is_admin_user')
-    @patch('api.deps.get_current_user')
-    def test_emergency_stop(self, mock_get_user, mock_is_admin):
+    def test_emergency_stop(self, mock_is_admin, authenticated_user):
         """Test emergency stop functionality."""
-        mock_get_user.return_value = {
-            "wallet_address": "0x1234567890abcdef1234567890abcdef12345678",
-            "authenticated": True
-        }
         mock_is_admin.return_value = True
         
         with TestClient(app) as client:
@@ -450,6 +560,39 @@ class TestRateLimiting:
             response = client.get("/health/ping")
             assert response.status_code == 200
 
+    @pytest.fixture
+    def fake_redis(self):
+        """Override only the Redis client so the real trade_rate_limiter runs."""
+        fake = Mock()
+        fake.get.return_value = None
+        undo = _override(get_redis_client, fake)
+        yield fake
+        undo()
+
+    def test_trade_rate_limiter_keys_on_wallet(self, fake_redis, authenticated_user):
+        """The limiter must not require a client-supplied request_id."""
+        with TestClient(app) as client:
+            response = client.post("/trade/execute",
+                headers={"Authorization": "Bearer test_token"},
+                json={"trade_type": "swap", "token_in": "ETH", "token_out": "USDC",
+                      "amount_in": 1.0, "dry_run": True}
+            )
+            assert response.status_code == 200
+        fake_redis.setex.assert_called_once()
+        key = fake_redis.setex.call_args.args[0]
+        assert key == f"rate_limit:wallet:{TEST_WALLET.lower()}"
+
+    def test_trade_rate_limiter_exceeded(self, fake_redis, authenticated_user):
+        """Requests over the limit get 429."""
+        fake_redis.get.return_value = str(trade_rate_limiter.max_requests)
+        with TestClient(app) as client:
+            response = client.post("/trade/execute",
+                headers={"Authorization": "Bearer test_token"},
+                json={"trade_type": "swap", "token_in": "ETH", "token_out": "USDC",
+                      "amount_in": 1.0, "dry_run": True}
+            )
+            assert response.status_code == 429
+
 
 class TestErrorHandling:
     """Test cases for error handling."""
@@ -468,7 +611,7 @@ class TestErrorHandling:
             })
             assert response.status_code == 422
     
-    @patch('api.deps.verify_nft_ownership')
+    @patch('api.routers.auth.verify_nft_ownership')
     def test_internal_server_error(self, mock_verify):
         """Test internal server error handling."""
         mock_verify.side_effect = Exception("Internal error")

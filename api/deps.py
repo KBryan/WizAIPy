@@ -4,7 +4,7 @@ Handles NFT gating, authentication, and other common dependencies.
 """
 
 from typing import Optional, Dict, Any
-from fastapi import Depends, HTTPException, status, Header
+from fastapi import Depends, HTTPException, Request, status, Header
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 import logging
 from web3 import Web3
@@ -253,11 +253,22 @@ class RateLimiter:
         self.max_requests = max_requests
         self.window_seconds = window_seconds
     
-    async def __call__(self, 
-                      request_id: str,
+    async def __call__(self,
+                      request: Request,
+                      user: Optional[Dict[str, Any]] = Depends(get_optional_user),
                       redis_client: redis.Redis = Depends(get_redis_client)):
-        """Check rate limit for a request."""
-        key = f"rate_limit:{request_id}"
+        """
+        Check rate limit for a request.
+
+        Buckets are keyed by the verified wallet address when the caller is
+        authenticated, otherwise by client IP. The key must never come from
+        the client itself, or callers could reset their own bucket at will.
+        """
+        if user and user.get("wallet_address"):
+            identity = f"wallet:{user['wallet_address'].lower()}"
+        else:
+            identity = f"ip:{request.client.host if request.client else 'unknown'}"
+        key = f"rate_limit:{identity}"
         current = redis_client.get(key)
         
         if current is None:

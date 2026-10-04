@@ -18,6 +18,9 @@ celery[redis]==5.3.4
 web3==6.12.0
 eth-account==0.9.0
 eth-utils==2.3.1
+# web3 6.x imports pkg_resources (removed in setuptools 81) and eth_typing.ContractName (removed in eth-typing 5)
+setuptools<81
+eth-typing<5
 
 # HTTP Clients & APIs
 httpx==0.25.2
@@ -38,6 +41,7 @@ numpy==1.26.0
 
 # Validation & Security
 python-jose[cryptography]==3.3.0
+PyJWT==2.14.0
 passlib[bcrypt]==1.7.4
 python-multipart==0.0.6
 
@@ -48,7 +52,7 @@ python-dotenv==1.0.0
 pytest==7.4.3
 pytest-asyncio==0.21.1
 pytest-mock==3.12.0
-httpx==0.25.2
+pytest-cov==7.1.0
 
 # Code Quality
 black==23.11.0
@@ -58,9 +62,8 @@ mypy==1.7.1
 # Utilities
 python-dateutil==2.8.2
 pytz==2023.3
+psutil==7.2.2
 
-pydantic-settings
-PyJWT
-flower
-psutil
-celery[redis]
+# Monitoring
+flower==2.1.0
+
